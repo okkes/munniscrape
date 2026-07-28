@@ -30,13 +30,22 @@ public interface ILeasedJobQueue
     /// Hands one job to an agent, or null when nothing matches.
     ///
     /// Respects, in order: provider status <c>AcceptsWork</c>, the agent's
-    /// declared capabilities, T4 profile affinity, and per-session
+    /// declared capabilities, T4 profile affinity, ownership, and per-session
     /// concurrency of one. Claiming is a conditional update guarded on the
     /// state and lease columns, so two agents racing for the same job produce
     /// one winner and one retry rather than one job run twice.
     /// </summary>
+    /// <param name="ownerSubject">
+    /// When non-null, only jobs belonging to a session with this subject may
+    /// be leased. This is the enforcement point for the invariant the
+    /// enrollment endpoint states - an agent may only ever serve the user who
+    /// enrolled it - and it is a parameter rather than something read off the
+    /// agent row so that the one caller allowed to opt out, the in-process
+    /// runner, has to say so explicitly by passing null.
+    /// </param>
     Task<LeasedJob?> TryLeaseAsync(
         string agentId,
+        string? ownerSubject,
         AgentCapabilities capabilities,
         IReadOnlyList<JobKind> accept,
         TimeSpan leaseTtl,

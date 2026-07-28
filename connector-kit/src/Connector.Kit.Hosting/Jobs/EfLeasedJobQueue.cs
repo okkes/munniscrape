@@ -76,6 +76,7 @@ public sealed class EfLeasedJobQueue(
 
     public async Task<LeasedJob?> TryLeaseAsync(
         string agentId,
+        string? ownerSubject,
         AgentCapabilities capabilities,
         IReadOnlyList<JobKind> accept,
         TimeSpan leaseTtl,
@@ -107,7 +108,7 @@ public sealed class EfLeasedJobQueue(
 
         for (var round = 0; round < RaceRetries; round++)
         {
-            var candidates = await db.Jobs
+            var queued = db.Jobs
                 .Where(j => j.State == JobState.Queued
                             && serveable.Contains(j.ProviderId)
                             // An OR chain over constants rather than a
@@ -127,7 +128,26 @@ public sealed class EfLeasedJobQueue(
                                                      && other.Id != j.Id
                                                      && (other.State == JobState.Leased
                                                          || other.State == JobState.Running
-                                                         || other.State == JobState.AwaitingInput)))
+                                                         || other.State == JobState.AwaitingInput)));
+
+            // Ownership. An agent may only ever serve the subject that
+            // enrolled it, which is what the enrollment endpoint means when it
+            // takes the subject off the one-time code rather than the request.
+            // Until this clause existed that was a comment and an index and
+            // nothing else: any enrolled machine could lease any user's login
+            // job, and Materialize would hand it that user's password in
+            // plaintext.
+            //
+            // Added as a separate Where rather than a term in the big
+            // predicate so the fleet and in-process cases emit no clause at
+            // all, and so this reads as the rule it is.
+            if (ownerSubject is not null)
+            {
+                queued = queued.Where(j => db.Sessions.Any(
+                    s => s.Id == j.SessionId && s.Subject == ownerSubject));
+            }
+
+            var candidates = await queued
                 .OrderBy(j => j.CreatedAt)
                 .ThenBy(j => j.Id)
                 .Take(CandidateBatch)

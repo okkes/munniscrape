@@ -31,6 +31,26 @@ public sealed class ConnectorOptions
     /// </summary>
     public string? EnrollmentHmacKey { get; set; }
 
+    /// <summary>
+    /// Subjects whose agents are the operator's own fleet and may therefore
+    /// serve every user. Every other agent serves only the subject that
+    /// enrolled it.
+    ///
+    /// This is operator configuration and not something an agent can say about
+    /// itself, which is the whole point. <see cref="AgentClass"/> looks like
+    /// the natural gate and is not one: an agent declares its own class at
+    /// enrollment and overwrites it on every heartbeat, so a machine that
+    /// wanted other people's jobs would simply call itself pooled.
+    /// <c>OwnerSubject</c> is trustworthy because it rides the one-time
+    /// enrollment code rather than the request - but the operator's own fleet
+    /// enrolls through that same endpoint, so it needs naming here.
+    ///
+    /// Empty means every agent is owner-scoped, which is the safe default: the
+    /// failure mode is a pooled job that nobody leases, not a credential
+    /// handed to the wrong machine.
+    /// </summary>
+    public IList<string> FleetSubjects { get; set; } = [];
+
     public bool IsProduction => Mode == ConnectorMode.Production;
 }
 

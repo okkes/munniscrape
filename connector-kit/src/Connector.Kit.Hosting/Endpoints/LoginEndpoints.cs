@@ -72,7 +72,8 @@ internal static class LoginEndpoints
                     : StatusCodes.Status202Accepted);
             }
 
-            var profileId = await ResolveProfileAsync(db, manifest, request.PreferAgent, ct);
+            var profileId = await ResolveProfileAsync(
+                db, manifest, request.PreferAgent, request.Subject, options.Value, ct);
 
             var session = await sessions.CreateAsync(new NewSession
             {
@@ -361,7 +362,12 @@ internal static class LoginEndpoints
     /// but one can serve it.
     /// </summary>
     private static async Task<string?> ResolveProfileAsync(
-        ConnectorDbContext db, ProviderManifest manifest, string? preferAgent, CancellationToken ct)
+        ConnectorDbContext db,
+        ProviderManifest manifest,
+        string? preferAgent,
+        string subject,
+        ConnectorOptions options,
+        CancellationToken ct)
     {
         if (manifest.Runtime != ProviderRuntime.BrowserPersistent) return null;
 
@@ -373,6 +379,17 @@ internal static class LoginEndpoints
 
         var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == preferAgent && !a.Revoked, ct)
                     ?? throw new ConnectorException(ErrorCode.AgentUnavailable, $"unknown agent '{preferAgent}'");
+
+        // Naming somebody else's machine must not pin a session to it. The
+        // same message as an agent that does not exist, deliberately: whether
+        // a given agent id belongs to another user is not this caller's to
+        // learn.
+        if (agent.OwnerSubject is { } owner
+            && !string.Equals(owner, subject, StringComparison.Ordinal)
+            && !options.FleetSubjects.Contains(owner, StringComparer.Ordinal))
+        {
+            throw new ConnectorException(ErrorCode.AgentUnavailable, $"unknown agent '{preferAgent}'");
+        }
 
         var existing = await db.Profiles.FirstOrDefaultAsync(
             p => p.AgentId == agent.Id && p.ProviderId == manifest.Id && p.SessionId == null, ct);

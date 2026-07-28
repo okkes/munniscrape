@@ -219,7 +219,15 @@ public sealed class AgentRow
 
     public AgentClass Class { get; set; } = AgentClass.Pooled;
 
-    /// <summary>Set for BYO. A BYO agent may only ever serve the subject that enrolled it.</summary>
+    /// <summary>
+    /// The subject that enrolled this agent, taken from the one-time code and
+    /// never from the agent's own request. An agent may only ever serve this
+    /// subject - see <c>ConnectorOptions.FleetSubjects</c> for the operator's
+    /// own fleet, which is the one exception and is named in configuration.
+    ///
+    /// Set for every agent, not only BYO ones: the pooled fleet enrolls
+    /// through the same endpoint with an operator-chosen subject.
+    /// </summary>
     public string? OwnerSubject { get; set; }
 
     public string CapabilitiesJson { get; set; } = "{}";

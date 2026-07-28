@@ -232,7 +232,11 @@ public sealed class InlineJobPump(
             {
                 using var scope = scopes.CreateScope();
                 var queue = scope.ServiceProvider.GetRequiredService<ILeasedJobQueue>();
-                job = await queue.TryLeaseAsync(InlineJobRunner.AgentId, capabilities, AllKinds, ttl, stoppingToken);
+                // No owner scope: this is the control plane running the job in
+                // its own process, not a machine somebody enrolled. It already
+                // holds every session's material by definition.
+                job = await queue.TryLeaseAsync(
+                    InlineJobRunner.AgentId, null, capabilities, AllKinds, ttl, stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

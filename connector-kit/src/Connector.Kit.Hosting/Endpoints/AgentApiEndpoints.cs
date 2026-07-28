@@ -107,6 +107,16 @@ internal static class AgentApiEndpoints
         {
             var agent = http.RequireAgent();
             var capabilities = ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities());
+
+            // Which subject's work this agent is allowed to see. Null only for
+            // the operator's own fleet, named in configuration - never decided
+            // from anything the agent sends, because Class arrives on the
+            // agent's own heartbeat and it would simply claim to be pooled.
+            var ownerScope = agent.OwnerSubject is { } owner
+                             && !options.Value.FleetSubjects.Contains(owner, StringComparer.Ordinal)
+                ? owner
+                : null;
+
             var ttl = TimeSpan.FromSeconds(options.Value.Timeouts.LeaseSeconds);
             var deadline = time.GetUtcNow().AddSeconds(options.Value.Timeouts.AgentPollSeconds);
 
@@ -115,7 +125,7 @@ internal static class AgentApiEndpoints
             // noisier, and the connection is already open either way.
             while (!ct.IsCancellationRequested)
             {
-                var job = await queue.TryLeaseAsync(agent.Id, capabilities, request.Accept, ttl, ct);
+                var job = await queue.TryLeaseAsync(agent.Id, ownerScope, capabilities, request.Accept, ttl, ct);
                 if (job is not null) return ConnectorResults.Json(job);
 
                 var remaining = deadline - time.GetUtcNow();
