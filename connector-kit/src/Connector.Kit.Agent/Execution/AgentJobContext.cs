@@ -223,9 +223,23 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
             {
                 try
                 {
-                    var answer = await _control.PollAnswerAsync(JobId, deadline.Token).ConfigureAwait(false);
+                    var answer = await _control
+                        .PollAnswerAsync(JobId, deadline.Token, raised.ChallengeId).ConfigureAwait(false);
+
                     if (answer is not null)
                     {
+                        // Belt and braces over the query parameter: an older
+                        // control plane ignores it and answers with whatever
+                        // is newest, and taking somebody else's answer for our
+                        // own would type an SMS code into a captcha.
+                        if (!string.Equals(answer.ChallengeId, raised.ChallengeId, StringComparison.Ordinal))
+                        {
+                            _logger.LogWarning(
+                                "job {JobId}: ignoring an answer for challenge {Other}; this asked {Mine}",
+                                JobId, answer.ChallengeId, raised.ChallengeId);
+                            continue;
+                        }
+
                         LogAnswer(challenge, answer);
                         return answer;
                     }

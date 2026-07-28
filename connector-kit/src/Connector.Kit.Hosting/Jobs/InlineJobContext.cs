@@ -117,7 +117,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
         using var scope = _scopes.CreateScope();
         var challenges = scope.ServiceProvider.GetRequiredService<ChallengeService>();
 
-        await challenges.RaiseAsync(JobId, new PendingChallenge
+        var raised = await challenges.RaiseAsync(JobId, new PendingChallenge
         {
             Type = challenge.Type,
             ExpiresAt = challenge.ExpiresAt,
@@ -125,8 +125,10 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
             Image = challenge.Image,
         }, ct);
 
+        // Named, so this waits for the answer to ITS question rather than to
+        // whichever is newest.
         var window = challenge.ExpiresAt - DateTimeOffset.UtcNow;
-        var answer = await challenges.AwaitAnswerAsync(JobId, window, ct);
+        var answer = await challenges.AwaitAnswerAsync(JobId, window, ct, raised.Id);
 
         return answer ?? throw new ConnectorException(
             ErrorCode.MfaTimeout, $"nobody answered the {challenge.Type} challenge in time");

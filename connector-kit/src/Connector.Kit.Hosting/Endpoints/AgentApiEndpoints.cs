@@ -210,8 +210,14 @@ internal static class AgentApiEndpoints
             var agent = http.RequireAgent();
             await RequireLeasedAsync(db, jobId, agent.Id, ct);
 
+            // The agent names the challenge it is waiting on. Optional so an
+            // older agent keeps working, but without it a job with two open
+            // questions hands back the answer to the wrong one.
+            var waitingFor = http.Request.Query["challenge_id"].ToString();
+
             var window = TimeSpan.FromSeconds(options.Value.Timeouts.AgentPollSeconds);
-            var answer = await challenges.AwaitAnswerAsync(jobId, window, ct);
+            var answer = await challenges.AwaitAnswerAsync(
+                jobId, window, ct, string.IsNullOrWhiteSpace(waitingFor) ? null : waitingFor);
 
             if (answer is not null) return ConnectorResults.Json(answer);
 

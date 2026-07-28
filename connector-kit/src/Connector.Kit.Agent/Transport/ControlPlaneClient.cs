@@ -107,9 +107,17 @@ public sealed class ControlPlaneClient
     /// surfaces as <see cref="ErrorCode.ChallengeExpired"/> so the job fails
     /// cleanly instead of pinning a browser for the full job timeout.
     /// </summary>
-    public async Task<ChallengeAnswer?> PollAnswerAsync(string jobId, CancellationToken ct)
+    public async Task<ChallengeAnswer?> PollAnswerAsync(
+        string jobId, CancellationToken ct, string? challengeId = null)
     {
+        // Named so the control plane returns the answer to THIS question. A job
+        // with two open challenges would otherwise be handed whichever was
+        // raised most recently.
         var path = JobPath(jobId, "answer");
+        if (!string.IsNullOrWhiteSpace(challengeId))
+        {
+            path += $"?challenge_id={Uri.EscapeDataString(challengeId)}";
+        }
         var client = _factory.CreateClient(ClientName);
 
         HttpResponseMessage response;

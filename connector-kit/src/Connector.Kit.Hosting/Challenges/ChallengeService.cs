@@ -171,7 +171,18 @@ public sealed class ChallengeService(
     /// challenge expired unanswered, which the caller turns into a clean job
     /// failure rather than a hung browser.
     /// </summary>
-    public async Task<ChallengeAnswer?> AwaitAnswerAsync(string jobId, TimeSpan window, CancellationToken ct)
+    /// <param name="challengeId">
+    /// The one being waited on. Null means "whichever is newest", which is what
+    /// this always did and is right only while a job asks one question at a
+    /// time. It does today - the relay raises a grid, waits, raises the next -
+    /// so nothing is broken. But the moment two are outstanding at once, the
+    /// newest is not necessarily the one the caller asked about, and the answer
+    /// to one question would be handed back as the answer to another. An older
+    /// agent that does not send the id keeps the old behaviour rather than
+    /// hanging.
+    /// </param>
+    public async Task<ChallengeAnswer?> AwaitAnswerAsync(
+        string jobId, TimeSpan window, CancellationToken ct, string? challengeId = null)
     {
         var deadline = time.GetUtcNow() + window;
 
@@ -180,7 +191,7 @@ public sealed class ChallengeService(
             var now = time.GetUtcNow();
             var latest = await db.Challenges
                 .AsNoTracking()
-                .Where(c => c.JobId == jobId)
+                .Where(c => c.JobId == jobId && (challengeId == null || c.Id == challengeId))
                 .OrderByDescending(c => c.CreatedAt)
                 .FirstOrDefaultAsync(ct);
 
