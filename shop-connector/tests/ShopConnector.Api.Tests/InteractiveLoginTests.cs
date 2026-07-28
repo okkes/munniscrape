@@ -120,6 +120,23 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
         {
             await ErrorEnvelope.AssertAsync(image, HttpStatusCode.Gone, "challenge_expired");
         }
+
+        // 7. And so did the answer, which was being kept like a diagnostic
+        //    and is nothing of the kind. Here it is a captcha solution, but
+        //    the same column carries an SMS code, and it carries the callback
+        //    URL of an OAuth redirect - which Lidl Plus declares Secret in as
+        //    many words, "the pasted address carries a live authorization
+        //    code... it buys the same access". The login inputs are gone at
+        //    terminal state and the picture goes on answer; this outlived
+        //    both, sitting in the table until the row was deleted a day after
+        //    expiry.
+        var answers = Db.Read(factory, db => db.Challenges
+            .Where(c => c.Id == challengeId)
+            .Select(c => c.AnswerValue)
+            .ToList());
+
+        Assert.Single(answers);
+        Assert.Null(answers[0]);
     }
 
     [Fact]

@@ -219,6 +219,19 @@ public sealed class ChallengeService(
             .Where(c => c.ImageBytes != null && (c.AnsweredAt != null || c.ExpiresAt < purgeBefore))
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.ImageBytes, (byte[]?)null), ct);
 
+        // The ANSWER is credential material too - an SMS code, or a callback
+        // URL carrying a live authorization code - and it is owned by
+        // JobOutcomeService, which clears it when the job reaches a terminal
+        // state. This is the backstop for a job that never gets there: an
+        // agent that lost its lease and never reported, a process killed
+        // mid-run. Bounded by the grace window rather than by AnsweredAt,
+        // because the adapter reads this column back to get its answer and a
+        // sweep racing that read would fail the login it was protecting.
+        await db.Challenges
+            .Where(c => c.AnswerValue != null
+                        && (c.AnsweredAt < purgeBefore || c.ExpiresAt < purgeBefore))
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.AnswerValue, (string?)null), ct);
+
         // Anything older than the grace window is not evidence of anything.
         await db.Challenges
             .Where(c => c.ExpiresAt < now.AddDays(-1))

@@ -103,6 +103,8 @@ public sealed class JobOutcomeService(
         // difference between a health signal and a kill switch.
         await providerStatus.RecoverAsync(job.ProviderId, ct);
 
+        await PurgeChallengeAnswersAsync(job.Id, ct);
+
         logger.LogInformation("job {JobId} ({Kind}/{Provider}) succeeded with {Count} record(s) via {Via}",
             job.Id, job.Kind, job.ProviderId, result.Accounts.Count + result.Transactions.Count + result.Receipts.Count,
             result.Via ?? "-");
@@ -135,8 +137,11 @@ public sealed class JobOutcomeService(
             await providerStatus.DegradeAsync(job.ProviderId, "connect.provider.changed", ct);
         }
 
-        // A retried job is still alive; nothing user-facing has happened yet.
+        // A retried job is still alive; nothing user-facing has happened yet -
+        // and its answer may still be wanted, so it keeps it.
         if (job.State != JobState.Failed) return job;
+
+        await PurgeChallengeAnswersAsync(job.Id, ct);
 
         var session = await db.Sessions.FirstOrDefaultAsync(s => s.Id == job.SessionId, ct);
         if (session is not null)
@@ -149,6 +154,30 @@ public sealed class JobOutcomeService(
 
         return job;
     }
+
+    /// <summary>
+    /// Clears what this job's challenges were answered with, once the job can
+    /// no longer want it.
+    ///
+    /// A challenge answer is credential material and was being kept like a
+    /// diagnostic. The picture is dropped the instant it is answered, and the
+    /// login inputs are gone at terminal state - but the ANSWER was written
+    /// once and never cleared, so it rested in the table until the row was
+    /// deleted a day after expiry. That is not a hypothetical: Lidl Plus
+    /// declares its <c>redirect_url</c> field <c>Secret</c> precisely because
+    /// "the pasted address carries a live authorization code... it buys the
+    /// same access", and an SMS code arrives the same way.
+    ///
+    /// Terminal state rather than answer time, because the answer is read back
+    /// out of this column to hand to the adapter - purging it on answer would
+    /// take it away before the thing that asked for it could read it. A job
+    /// that is still alive keeps its answer; one that is finished has no use
+    /// for it.
+    /// </summary>
+    private Task<int> PurgeChallengeAnswersAsync(string jobId, CancellationToken ct) =>
+        db.Challenges
+            .Where(c => c.JobId == jobId && c.AnswerValue != null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.AnswerValue, (string?)null), ct);
 
     /// <summary>
     /// Each terminal code has a user-facing meaning, and the meaning is the
