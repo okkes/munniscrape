@@ -184,9 +184,26 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
         }, ct).ConfigureAwait(false);
 
         Progress(JobStep.AwaitingHuman);
+
+        // The geometry is logged because a tap answer is meaningless without
+        // the box it was measured against. When taps land in the wrong place
+        // the question is always which of three rectangles disagreed - the one
+        // photographed, the one drawn on the human's screen, and the one the
+        // answer is mapped back into - and only the first is knowable here.
+        // Fractions and pixel counts are not secrets; the image itself has
+        // already been through the redactor.
         _logger.LogInformation(
-            "job {JobId}: raised challenge {ChallengeId} of type {Type}, expiring {ExpiresAt:O}",
-            JobId, raised.ChallengeId, challenge.Type, challenge.ExpiresAt);
+            "job {JobId}: raised challenge {ChallengeId} type={Type} answer_kind={AnswerKind} " +
+            "crop={Crop} image={ImageBytes}B expires={ExpiresAt:O}",
+            JobId,
+            raised.ChallengeId,
+            challenge.Type,
+            challenge.AnswerKind,
+            challenge.Crop is { } box
+                ? $"{box.Width}x{box.Height}@{box.X},{box.Y}"
+                : "none",
+            image?.Length ?? 0,
+            challenge.ExpiresAt);
 
         // The challenge's own expiry bounds the wait, not the job timeout: a
         // stale challenge holds a live browser hostage, and releasing the agent
@@ -207,7 +224,11 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
                 try
                 {
                     var answer = await _control.PollAnswerAsync(JobId, deadline.Token).ConfigureAwait(false);
-                    if (answer is not null) return answer;
+                    if (answer is not null)
+                    {
+                        LogAnswer(challenge, answer);
+                        return answer;
+                    }
                 }
                 catch (ControlPlaneException ex) when (ex.IsTransient)
                 {
@@ -318,6 +339,60 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
         };
 
         return new HttpClient(limiter, disposeHandler: true) { Timeout = options.HttpTimeout };
+    }
+
+    /// <summary>
+    /// What came back, in the only detail that is safe to write down.
+    ///
+    /// A tap answer is coordinates on a picture the redactor already cleared,
+    /// so it can be logged in full - and it has to be, because "the taps
+    /// landed in the wrong square" is unanswerable without knowing which
+    /// fractions arrived and which pixels they became. Every other answer is
+    /// secret-tainted by default: an MFA code, a one-time password, whatever a
+    /// provider decided to ask for. Those get a length and nothing else.
+    /// </summary>
+    private void LogAnswer(Challenge challenge, ChallengeAnswer answer)
+    {
+        if (challenge.AnswerKind != ChallengeAnswerKind.Taps)
+        {
+            _logger.LogInformation(
+                "job {JobId}: answered {Type} challenge with {Length} character(s)",
+                JobId, challenge.Type, answer.Value?.Length ?? 0);
+            return;
+        }
+
+        if (!TapAnswer.TryParse(answer.Value, out var taps))
+        {
+            // The consumer ignored answer_kind and sent a string. Worth a
+            // warning rather than a debug line: nothing will be clicked, the
+            // adapter will report an unanswered challenge, and the reason will
+            // otherwise be invisible from either end.
+            _logger.LogWarning(
+                "job {JobId}: a taps challenge came back as something else ({Length} character(s)); " +
+                "nothing will be clicked. The consumer is ignoring answer_kind.",
+                JobId, answer.Value?.Length ?? 0);
+            return;
+        }
+
+        // Mapped here purely so the log carries both halves. The adapter maps
+        // them again against a FRESHLY measured box before dispatching, and
+        // the difference between these pixels and where the click actually
+        // lands is exactly the re-layout this design has to survive.
+        var mapped = challenge.Crop is { } box
+            ? string.Join(" ", taps.Taps.Select(t =>
+            {
+                var (x, y) = t.ToPagePixels(box);
+                return $"({t.X:0.####},{t.Y:0.####})->{x:0}x{y:0}";
+            }))
+            : string.Join(" ", taps.Taps.Select(t => $"({t.X:0.####},{t.Y:0.####})"));
+
+        _logger.LogInformation(
+            "job {JobId}: answered with {Count} tap(s), submit={Submit}, against crop {Crop}: {Mapped}",
+            JobId,
+            taps.Taps.Count,
+            taps.Submit,
+            challenge.Crop is { } c ? $"{c.Width}x{c.Height}@{c.X},{c.Y}" : "none",
+            mapped.Length == 0 ? "(none)" : mapped);
     }
 
     /// <summary>

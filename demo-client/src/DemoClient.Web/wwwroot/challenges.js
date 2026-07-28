@@ -65,6 +65,14 @@ export function renderChallenge(challenge, { onAnswer, loadImage } = {}) {
 
   const taps = isTapKind(challenge);
 
+  // `answer_kind` overrides the prompt key's own wording, because a connector
+  // deliberately sends ONE captcha key for both shapes - "this is not a
+  // different question, it is the same question answered with a finger" - and
+  // leaves the control to answer_kind. Rendering the key verbatim therefore
+  // printed "Type the characters shown in the picture" above a grid with no
+  // text box in it.
+  const promptKey = taps ? tapPromptKey(challenge) : challenge.prompt_key;
+
   const element = h('section', { class: `challenge challenge-${challenge.type}` },
     h('header', { class: 'challenge-head' },
       h('div', {},
@@ -74,7 +82,7 @@ export function renderChallenge(challenge, { onAnswer, loadImage } = {}) {
         taps ? badge('taps', 'info') : null,
         h('h3', {}, taps ? sayTerm('answer_kind', 'taps') : sayTerm('challenge', challenge.type))),
       clock.element),
-    challenge.prompt_key ? h('p', { class: 'challenge-prompt' }, sayKey(challenge.prompt_key)) : null,
+    promptKey ? h('p', { class: 'challenge-prompt' }, sayKey(promptKey)) : null,
     body,
     status,
     h('p', { class: 'alert-meta' }, h('code', {}, challenge.id)));
@@ -97,6 +105,20 @@ export function renderChallenge(challenge, { onAnswer, loadImage } = {}) {
  * That is the intended degradation: guessing taps out of a string would click
  * a live page at coordinates no human chose.
  */
+/**
+ * The tap wording for a challenge whose key was written for a text box.
+ *
+ * A provider that sends its own tap-specific key keeps it - this only rewrites
+ * the generic captcha key, which is the one a connector reuses for both
+ * shapes. Anything unrecognised is left alone and degrades visibly, as every
+ * unknown key does.
+ */
+function tapPromptKey(challenge) {
+  return !challenge.prompt_key || challenge.prompt_key === 'connect.challenge.captcha'
+    ? 'connect.challenge.captcha_tiles'
+    : challenge.prompt_key;
+}
+
 function isTapKind(challenge) {
   return challenge.answer_kind === 'taps';
 }
@@ -202,21 +224,30 @@ const percent = (value) => `${(value * 100).toFixed(3)}%`;
 const coordinate = (value) => String(Math.round(value * 10 ** TAP_DIGITS) / 10 ** TAP_DIGITS);
 
 /**
- * `tap.v1:x,y;x,y;submit` - `TapAnswer.Format`, character for character.
+ * `tap.v1:x,y;x,y[;submit]` - `TapAnswer.Format`, character for character.
  *
- * The marker is always appended because pressing this button is what "I am
- * done" means. A client that wanted to stream taps while the human is still
- * choosing would leave it off and send again later; this one does not, because
- * a captcha token ages while we wait and one round trip is the cheapest.
+ * The marker used to be appended unconditionally, on the reasoning that one
+ * round trip is cheapest because a captcha token ages while we wait. That is
+ * true of a grid that answers in one shot, and wrong about every widget that
+ * draws its own verify button INSIDE the picture we relayed - hCaptcha, which
+ * is the whole reason taps exist. There, "done" is not ours to declare: the
+ * marker ends the relay, so sending it after the first two tiles replayed
+ * those two clicks and walked away while the widget sat waiting to be
+ * verified. The human saw one picture, tapped it, and never learned whether
+ * anything registered.
  *
- * With no taps at all this produces `tap.v1:submit`, which is not an empty
- * answer - it is "verify with nothing selected", the legal way to answer a
- * grid where nothing matches. An empty string would mean the human never
+ * So `done` is now the human's choice, and the default is to come back with a
+ * fresh photograph of what their taps did. That extra round is not overhead;
+ * for this widget it is the only feedback that exists.
+ *
+ * With no taps and done=true this produces `tap.v1:submit`, which is not an
+ * empty answer - it is "verify with nothing selected", the legal way to answer
+ * a grid where nothing matches. An empty string would mean the human never
  * answered, and those are different sentences.
  */
-function formatTaps(taps) {
+function formatTaps(taps, done) {
   const parts = taps.map((tap) => `${coordinate(tap.x)},${coordinate(tap.y)}`);
-  parts.push('submit');
+  if (done) parts.push('submit');
   return `tap.v1:${parts.join(';')}`;
 }
 
@@ -271,9 +302,18 @@ function tapChallenge(challenge, ctx) {
 
   const undo = h('button', { class: 'ghost small-button', type: 'button' }, 'Undo');
   const wipe = h('button', { class: 'ghost small-button', type: 'button' }, 'Clear');
-  const send = h('button', { class: 'primary', type: 'submit' }, 'Submit');
+  const send = h('button', { class: 'primary', type: 'submit' }, 'Send taps');
 
-  ctx.controls.push(stage, undo, wipe, send);
+  // Separate from "Send taps" because they mean different things to the
+  // provider: this one ends the relay, and on a widget that draws its own
+  // verify button inside the picture, ending it early is how a half-answered
+  // captcha gets abandoned looking like a coordinate bug.
+  const done = h('button', {
+    class: 'ghost', type: 'button',
+    onclick: () => ctx.submit(formatTaps(taps, true)),
+  }, 'Done');
+
+  ctx.controls.push(stage, undo, wipe, send, done);
 
   const refresh = () => {
     mount(marks, taps.map((tap, index) => h('span', {
@@ -283,7 +323,7 @@ function tapChallenge(challenge, ctx) {
 
     const plural = taps.length === 1 ? '' : 's';
     count.textContent = taps.length === 0
-      ? 'Nothing selected. Submitting now answers "none of these" - which is a real answer, not an empty one.'
+      ? 'Nothing selected. "Done" now answers "none of these" - which is a real answer, not an empty one.'
       : `${taps.length} point${plural} selected, in the order you tapped them.`;
 
     const dead = ctx.expired();
@@ -291,6 +331,7 @@ function tapChallenge(challenge, ctx) {
     undo.disabled = dead || taps.length === 0;
     wipe.disabled = dead || taps.length === 0;
     send.disabled = dead || !ready;
+    done.disabled = dead || !ready;
   };
 
   const place = (x, y) => {
@@ -382,13 +423,16 @@ function tapChallenge(challenge, ctx) {
     note('Tap what the provider is asking for. Every tap is marked and numbered, and the order ',
       'is sent as you made it - some grids ask for tiles in sequence.'),
     count,
-    h('div', { class: 'answer-row' }, send, undo, wipe),
+    h('div', { class: 'answer-row' }, send, done, undo, wipe),
+    note('"Send taps" replays them on the page and shows you a fresh picture of what happened - ',
+      'including this widget\'s own buttons, which you press by tapping them here. Use "Done" only ',
+      'when the provider has accepted the answer and there is nothing left to look at.'),
     note('Your taps travel back as fractions of this picture, so they land in the same square ',
       'whatever the size of your screen. Nobody here solved anything - you did.'));
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    ctx.submit(formatTaps(taps));
+    ctx.submit(formatTaps(taps, false));
   });
 
   refresh();

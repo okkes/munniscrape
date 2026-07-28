@@ -45,7 +45,9 @@ const KEYS = {
   // the reference consumer and a missing string in the flagship path reads as
   // a bug in the feature rather than in the copy. An unmapped key still
   // degrades visibly, which is why mapping one early costs nothing.
-  'connect.challenge.captcha_tiles': 'Tap every square the provider asked for, then press submit.',
+  'connect.challenge.captcha_tiles':
+    'Tap what the provider is asking for, then press "Send taps". This widget lives on the page - '
+    + 'its own buttons are inside this picture, so tap those here too.',
   // Not something we can relay: an hCaptcha wants drags and clicks and hands
   // its answer straight to the provider, so the only person who can pass one
   // is whoever is sitting at the browser the agent opened.

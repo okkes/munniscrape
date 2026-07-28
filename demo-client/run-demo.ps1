@@ -37,6 +37,11 @@ param(
 
     [switch] $NoBuild,
 
+    # Show the browser the shopping agent drives. For working out where a
+    # relayed tap actually landed, which no log line can tell you as directly
+    # as watching the click happen.
+    [switch] $Headed,
+
     # The one human this demo has. Everything identity-shaped is derived from
     # it, so the agent and the relay cannot end up disagreeing about who is
     # connected - see $ShopSalt below.
@@ -92,16 +97,33 @@ usage: run-demo.ps1 [--no-agent] [--bank-agent] [--no-build] [-UserId <id>]
   --bank-agent   also start BankConnector.Agent, which is what mock-bank-sca
                  and mock-bank-slow need. No browser binaries required.
   --no-build     start whatever is already in bin/ instead of building first.
+  --headed       show the browser the shopping agent drives.
 '@
+}
+
+# $UserId is positional, so PowerShell binds the FIRST bare argument to it -
+# and a GNU-style flag is a bare argument. `run-demo.ps1 --no-build` therefore
+# never reached the loop below: it became the user id, and since every subject
+# is HMAC(salt, userId), the relay logged in as a different person than the one
+# the agent enrolled under. The only symptom was every browser-tier provider
+# reporting agent_unavailable forever, which points at the agent rather than at
+# the argument. Hand anything flag-shaped back to the parser instead.
+if ($UserId -and $UserId.StartsWith('-')) {
+    # $Rest is $null when there were no further arguments, and @($null) is an
+    # array holding one empty element, not an empty array.
+    $Rest = @($UserId) + @($Rest | Where-Object { $_ })
+    $UserId = $null
 }
 
 # GNU-style flags as well as PowerShell switches: the two scripts are meant to
 # be typed interchangeably, and a demo that rejects the flag printed in its own
 # README is a bad first impression.
 foreach ($arg in $Rest) {
+    if (-not $arg) { continue }
     if ($arg -eq '--no-agent') { $NoAgent = $true }
     elseif ($arg -eq '--bank-agent') { $BankAgent = $true }
     elseif ($arg -eq '--no-build') { $NoBuild = $true }
+    elseif ($arg -eq '--headed') { $Headed = $true }
     elseif ($arg -eq '-h' -or $arg -eq '--help') { Show-Usage; exit 0 }
     else { Write-Host "unknown argument '$arg'"; Show-Usage; exit 2 }
 }
@@ -437,8 +459,17 @@ try {
         # settings: those name a fixed port, and an agent long-polling a
         # different instance than the one the UI talks to looks exactly like
         # an agent that never picks up work.
+        # --headed shows the browser the agent is driving. The relay is
+        # unaffected: a widget whose grid can be named is photographed and
+        # relayed whether or not anyone is watching, and Attended only decides
+        # the FALLBACK when nothing could be relayed. So this is a window onto
+        # the same run, not a different one - which is what makes it usable for
+        # working out where a replayed tap actually landed.
+        $agentArgs = @("--ConnectorAgent:ControlPlaneBaseUrl=$shopUrl/", "--ConnectorAgent:EnrollmentCode=$code")
+        if ($Headed) { $agentArgs += '--ConnectorAgent:Headless=false' }
+
         $agentProcess = Start-Child -Name 'ShopConnector.Agent' -Project $shopAgent `
-            -Arguments @("--ConnectorAgent:ControlPlaneBaseUrl=$shopUrl/", "--ConnectorAgent:EnrollmentCode=$code") `
+            -Arguments $agentArgs `
             -Environment @{ DOTNET_ENVIRONMENT = 'Development' }
 
         $shopAgentId = Wait-Agent -BaseUrl $shopUrl -Subject $ShopSubject
