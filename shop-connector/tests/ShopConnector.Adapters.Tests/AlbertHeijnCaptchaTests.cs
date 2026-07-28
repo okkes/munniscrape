@@ -249,6 +249,49 @@ public sealed class AlbertHeijnCaptchaTests
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
     }
 
+    /// <summary>
+    /// The same widget, answered by somebody who has not finished yet.
+    ///
+    /// This is the case that broke a working login. Once the client could send
+    /// taps without ending the relay - the only way to press a verify button
+    /// that lives inside the relayed picture - every tap spent one of the
+    /// provider's four rounds. Live, that meant four drawn puzzles, four
+    /// correct answers, nothing failing anywhere, and then the paste-a-URL
+    /// fallback. Being made to start again is what the budget is for; working
+    /// through a grid is not.
+    /// </summary>
+    [Fact]
+    public async Task A_human_still_working_through_a_grid_does_not_spend_the_providers_rounds()
+    {
+        var page = StubLoginPage.Showing(Grid);
+        var taps = new StubTapSurface(page);
+
+        using var ctx = new FakeJobContext
+        {
+            Browser = new StubBrowserLease(page),
+            // Taps, and never the marker: "show me what that did".
+            Answer = _ => new TapAnswer { Taps = [new Tap(0.5, 0.5)], Submit = false }.Format(),
+        };
+
+        var error = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().SettleAsync(
+                ctx, page, new StubRedirectWaiter(redirect: null, afterWaits: 0), taps, CancellationToken.None));
+
+        var pictures = ctx.Asked.Count(c => c.Type == ChallengeType.Image);
+
+        // Well past four. It stops on the loop's own backstop instead, which
+        // exists because the wall clock deliberately does not bound this: every
+        // ask parks the job budget while a human thinks.
+        Assert.True(
+            pictures > Options.CaptchaRelayRounds,
+            $"a human answering was cut off after {pictures} picture(s), the provider's escalation budget");
+        Assert.Equal(24, pictures);
+
+        // Every one of them was replayed onto the page.
+        Assert.Equal(pictures, taps.Dispatches);
+        Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
+    }
+
     [Fact]
     public async Task A_human_who_is_not_finished_gets_the_next_picture_without_a_wasted_poll()
     {

@@ -176,6 +176,16 @@ internal sealed record CaptchaSpec
     /// well. Bounded because the alternative is a loop whose exit condition
     /// belongs to somebody else's JavaScript.
     /// </summary>
+    /// <summary>
+    /// How many times the provider may put a wall back up before the relay
+    /// gives up on it.
+    ///
+    /// Counts ESCALATIONS, not pictures. A human tapping their way through a
+    /// grid does not spend this, however many round trips it takes them -
+    /// they are answering, and the loop is doing what it was built for. What
+    /// spends it is a gesture that did not get past: a tick that did not take,
+    /// or a finished answer that left another wall standing.
+    /// </summary>
     public int RelayRounds { get; init; } = 4;
 
     /// <summary>How long the human has to answer a relayed image captcha.</summary>
@@ -216,6 +226,19 @@ internal sealed record CaptchaSpec
 /// </summary>
 internal sealed class CaptchaGate
 {
+    /// <summary>
+    /// A backstop on the relay loop, not a budget anybody should reach.
+    ///
+    /// The wall clock is deliberately not the bound here: every ask parks the
+    /// job's budget while a human thinks, and the settle deadline restarts
+    /// after they answer, because the minutes they spent are not the provider
+    /// being slow. That is the right call and it leaves nothing else to stop a
+    /// widget and a person handing rounds back and forth forever, so this
+    /// does. Well past any real escalation - hCaptcha chains a handful of
+    /// puzzles at its worst - and far short of never.
+    /// </summary>
+    private const int MaxRelayIterations = 24;
+
     /// <summary>What one relayed grid came to.</summary>
     private enum GridRound
     {
@@ -435,11 +458,32 @@ internal sealed class CaptchaGate
         var current = wall;
         var ticked = false;
 
-        for (var round = 0; round < _spec.RelayRounds; round++)
+        // Two counters, because two different things need bounding and only
+        // one of them is the provider's fault.
+        //
+        // `escalations` is another wall going up that our last gesture did not
+        // get past - the budget this always meant to be. `iterations` is a
+        // backstop on the loop itself.
+        //
+        // A round the human answered with taps is neither, and counting it as
+        // one did real damage. Once the client could send taps WITHOUT ending
+        // the relay - which is the only way to press a verify button that
+        // lives inside the picture we relayed - every tap spent a round.
+        // Observed live: four drawn puzzles, four answers, nothing failing
+        // anywhere, and then the budget ran out and dropped the login into the
+        // paste-a-URL fallback. The human did everything right and was handed
+        // back to a browser window this design exists to spare them.
+        //
+        // Somebody working through a widget is progress. Only being made to
+        // start again is not.
+        var escalations = 0;
+        var iterations = 0;
+
+        while (escalations < _spec.RelayRounds && iterations < MaxRelayIterations)
         {
             ct.ThrowIfCancellationRequested();
 
-            if (round > 0)
+            if (iterations++ > 0)
             {
                 // What the last gesture left standing, measured rather than
                 // assumed: a tick becomes a grid, a grid becomes another grid,
@@ -471,6 +515,11 @@ internal sealed class CaptchaGate
 
                 if (relayed is GridRound.Lost) return CaptchaOutcome.Stuck;
                 settle = relayed is GridRound.Done;
+
+                // More means the human is mid-answer and wants the next
+                // picture, which is the relay working rather than the provider
+                // resisting.
+                if (relayed is not GridRound.More) escalations++;
             }
             else if (!ticked)
             {
@@ -485,6 +534,10 @@ internal sealed class CaptchaGate
                 }
 
                 ticked = true;
+
+                // Our gesture, not theirs. If the widget is still standing
+                // next time round, this one did not get past it.
+                escalations++;
             }
             else
             {
@@ -504,6 +557,11 @@ internal sealed class CaptchaGate
 
                 if (relayed is GridRound.Lost) return CaptchaOutcome.Stuck;
                 settle = relayed is GridRound.Done;
+
+                // More means the human is mid-answer and wants the next
+                // picture, which is the relay working rather than the provider
+                // resisting.
+                if (relayed is not GridRound.More) escalations++;
             }
 
             // Every gesture may have been the last one the provider needed,
