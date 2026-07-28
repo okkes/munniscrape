@@ -364,6 +364,41 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     }
 
     /// <summary>
+    /// The answer route refuses a live view, and the refusal is the custody
+    /// argument holding.
+    ///
+    /// Everything a human does to a live view travels as pointer and key
+    /// events and is kept nowhere. But the ordinary answer route next door
+    /// persists whatever it is handed into <c>ChallengeRow.AnswerValue</c> -
+    /// so a consumer that posted the typed password there, by confusion or by
+    /// design, would put the credential into the one column this entire design
+    /// exists to keep it out of. There is no shape of answer that is correct
+    /// here, so there is no answer accepted.
+    /// </summary>
+    [Fact]
+    public async Task The_answer_route_refuses_a_live_view_so_no_typed_value_can_be_stored()
+    {
+        var run = await ArrangeAsync();
+        using var http = factory.CreateAuthorizedClient();
+
+        using var request = Wire.Post(
+            $"/v1/{Provider}/login/{run.SessionId}/answer",
+            new { challenge_id = run.ChallengeId, value = "hunter2" });
+
+        using var response = await http.SendAsync(request);
+        await ErrorEnvelope.AssertAsync(response, HttpStatusCode.BadRequest, "unsupported_resource");
+
+        // And nothing was written on the way to being refused.
+        var stored = Db.Read(factory, db => db.Challenges
+            .Where(c => c.Id == run.ChallengeId)
+            .Select(c => new { c.AnswerValue, c.AnsweredAt })
+            .Single());
+
+        Assert.Null(stored.AnswerValue);
+        Assert.Null(stored.AnsweredAt);
+    }
+
+    /// <summary>
     /// A live view that is over serves no further pixels and takes no further
     /// keys - by the clock, or because the adapter's own success signal settled
     /// it. That second one is where the agent's latch stops being a property of

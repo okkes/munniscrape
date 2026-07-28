@@ -125,6 +125,30 @@ public sealed class ChallengeService(
         var row = await FindAsync(challengeId, jobId, ct)
                   ?? throw ConnectorException.Unsupported($"unknown challenge '{challengeId}'");
 
+        // A live view carries no VALUE, and one arriving here would be stored.
+        //
+        // Everything a human does to a live view travels as pointer and key
+        // events, replayed into the page and kept nowhere. This route persists
+        // whatever it is handed into ChallengeRow.AnswerValue - so a consumer
+        // that posted the typed password here, by confusion or by design, would
+        // put the credential straight into the column the whole streamed login
+        // exists to keep it out of.
+        //
+        // An EMPTY answer is still accepted, because that is how a passive
+        // challenge is settled and it is how a live view ends: the adapter sees
+        // the login complete and closes the question. Refusing that too would
+        // leave every live view to time out on its own clock, holding a browser
+        // for the full window after the work was already done.
+        //
+        // Refused here rather than at the endpoint, because the endpoint is not
+        // the only way in.
+        if (row.Type == ChallengeType.LiveView && !string.IsNullOrEmpty(value))
+        {
+            throw ConnectorException.Unsupported(
+                $"challenge '{challengeId}' is a live view: it is answered by pointer and key events, " +
+                "and a value posted here would be stored");
+        }
+
         if (row.AnsweredAt is not null)
         {
             throw ConnectorHttpException.Conflict("challenge_already_answered");
