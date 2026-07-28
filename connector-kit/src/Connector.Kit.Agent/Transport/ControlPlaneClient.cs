@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Connector.Kit.AgentProtocol;
 using Connector.Kit.Challenges;
@@ -8,15 +10,24 @@ using Microsoft.Extensions.Logging;
 namespace Connector.Kit.Agent.Transport;
 
 /// <summary>
-/// The agent's whole view of the control plane: nine calls, all outbound.
+/// The agent's whole view of the control plane: eleven calls, all outbound.
 ///
 /// There is no inbound surface here by design - that is what lets an agent sit
 /// behind NAT on a residential line or on a user's own machine with no port
-/// open and no redesign for the bring-your-own case.
+/// open and no redesign for the bring-your-own case. The live view keeps that
+/// property rather than spending it: a stream that looks like it needs a socket
+/// dialled INTO the agent is a POST out per frame and a long poll out for what
+/// comes back.
 /// </summary>
 public sealed class ControlPlaneClient
 {
     public const string ClientName = "connector-agent-control-plane";
+
+    /// <summary>Monotonic per job, so a viewer showing frame 40 ignores 39 arriving late.</summary>
+    public const string SequenceHeader = "X-Live-Sequence";
+
+    /// <summary><c>WIDTHxHEIGHT</c>, the size these bytes really are.</summary>
+    public const string SizeHeader = "X-Live-Size";
 
     private readonly IHttpClientFactory _factory;
     private readonly ILogger<ControlPlaneClient> _logger;
@@ -142,6 +153,98 @@ public sealed class ControlPlaneClient
 
         EnsureSuccess(response, "answer");
         return await ReadAsync<ChallengeAnswer>(response, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Posts one live-view frame, replacing whatever the control plane is
+    /// holding for this job.
+    ///
+    /// False means the channel is gone - no such job, or the live view has been
+    /// revoked - and the caller must stop the shutter rather than retry. That
+    /// distinction is the whole reason this returns a bool instead of throwing
+    /// on every non-success: a stream posts many times a second, so "give up"
+    /// and "the network blinked" cannot be the same answer, and an exception
+    /// per frame would drown the log line that says which one it was.
+    ///
+    /// The bytes are the body, raw. Not base64 in JSON: a third of a live
+    /// view's bandwidth is not worth spending to make a frame look like every
+    /// other call, and nothing about a JPEG needs escaping.
+    /// </summary>
+    public async Task<bool> PostLiveFrameAsync(string jobId, LiveFrame frame, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+
+        var path = JobPath(jobId, "live/frame");
+        var client = _factory.CreateClient(ClientName);
+
+        using var content = new ByteArrayContent(frame.Bytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = content };
+
+        // The sequence and the size ride as headers rather than in the body
+        // because the body IS the picture. The size is the size the frame was
+        // actually taken at, and it travels with every frame - a viewer that
+        // rotated a phone, or a provider that re-rendered at a different size,
+        // otherwise misplaces every event the human makes afterwards, silently.
+        request.Headers.TryAddWithoutValidation(
+            SequenceHeader, frame.Sequence.ToString(CultureInfo.InvariantCulture));
+        request.Headers.TryAddWithoutValidation(
+            SizeHeader, string.Create(CultureInfo.InvariantCulture, $"{frame.Width}x{frame.Height}"));
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new ControlPlaneException(ex.StatusCode, $"POST {path} did not reach the control plane", ex);
+        }
+
+        using var _ = response;
+
+        if (response.IsSuccessStatusCode) return true;
+
+        // A 4xx is a verdict about this channel: the job is finished, the
+        // capability was revoked, or nobody is watching. Stop, quietly.
+        if ((int)response.StatusCode is >= 400 and < 500) return false;
+
+        throw new ControlPlaneException(response.StatusCode, $"live frame {frame.Sequence} of job {jobId} was refused");
+    }
+
+    /// <summary>
+    /// Long-polls for what the human did. Null means the window closed with
+    /// nothing in it, which is the normal state of a login form nobody is
+    /// touching - not an error and not a reason to back off.
+    /// </summary>
+    /// <param name="after">
+    /// The highest event sequence this agent has already been handed. The
+    /// cursor is the agent's own, so a re-delivered batch arrives with nothing
+    /// newer in it and is dropped on this side too: an Enter delivered twice is
+    /// a second credential submission on a page that counts attempts.
+    /// </param>
+    public async Task<LiveInputBatch?> PollLiveInputAsync(string jobId, long after, CancellationToken ct)
+    {
+        var path = JobPath(jobId, "live/input") + $"?after={after.ToString(CultureInfo.InvariantCulture)}";
+        var client = _factory.CreateClient(ClientName);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.GetAsync(path, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new ControlPlaneException(ex.StatusCode, $"GET {path} did not reach the control plane", ex);
+        }
+
+        using var _ = response;
+
+        if (response.StatusCode == HttpStatusCode.NoContent) return null;
+
+        EnsureSuccess(response, "live input");
+        return await ReadAsync<LiveInputBatch>(response, ct).ConfigureAwait(false);
     }
 
     public async Task ResultAsync(string jobId, JobResultRequest result, CancellationToken ct)

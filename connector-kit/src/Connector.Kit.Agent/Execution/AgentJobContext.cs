@@ -217,6 +217,19 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
         // means whichever is shorter wins, and the human loses.
         using var parked = _budget?.Park();
 
+        // A live view is a conversation rather than a question, and the
+        // PLATFORM opens and closes it - never the adapter. That is the
+        // provenance rule ImageForAsync already applies to adapter-supplied
+        // bytes, carried to a far larger capability: an adapter author cannot
+        // forget the stop latch because they never touch it, and cannot ask for
+        // one on a challenge the platform did not classify as a live view.
+        //
+        // Bound to the challenge's own deadline, so an expiry stops the shutter
+        // by the same clock that stops the wait.
+        await using var live = challenge.Type is ChallengeType.LiveView
+            ? await OpenLiveViewAsync(deadline.Token).ConfigureAwait(false)
+            : null;
+
         try
         {
             while (true)
@@ -410,6 +423,46 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
     }
 
     /// <summary>
+    /// Opens the stream for a <see cref="ChallengeType.LiveView"/>, or null
+    /// when there is nothing to photograph.
+    ///
+    /// Every failure here produces a live view that does not open, never a job
+    /// that fails. The challenge underneath is passive - the same machinery
+    /// <see cref="ChallengeType.AppApproval"/> uses - so a stream that could not
+    /// start degrades to a wait the adapter's own success watch still ends,
+    /// which is the degradation the consumer would get anyway if it had never
+    /// heard of a live view.
+    /// </summary>
+    private async Task<LiveViewSession?> OpenLiveViewAsync(CancellationToken ct)
+    {
+        if (!_browser.Started)
+        {
+            // Deliberately not launching one. A browser started here would open
+            // on about:blank, which is not a login page and not on any origin
+            // the stream is allowed to photograph.
+            _logger.LogWarning(
+                "job {JobId}: a live view was raised with no browser running, so there is nothing to photograph",
+                JobId);
+            return null;
+        }
+
+        try
+        {
+            var page = await _browser.PageAsync(ct).ConfigureAwait(false);
+            var session = new LiveViewSession(
+                page, _redactor, _control, JobId, new LiveViewOptions(), _logger, _time);
+
+            session.Start(ct);
+            return session;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "job {JobId}: the live view could not be opened", JobId);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Decides what image, if any, accompanies a challenge.
     ///
     /// Adapter-supplied bytes are re-verified against the live page before they
@@ -419,6 +472,13 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
     /// </summary>
     private async Task<byte[]?> ImageForAsync(Challenge challenge, CancellationToken ct)
     {
+        // A live view carries no still, ever, whoever offered one. The raise
+        // payload's image is written to the challenge row and lives there for
+        // the length of the job - and "a live view frame is never stored" is
+        // not a habit, it is what makes the custody claim true. The stream
+        // starts a fraction of a second later on a channel that keeps nothing.
+        if (challenge.Type is ChallengeType.LiveView) return null;
+
         if (challenge.Image is { Length: > 0 } supplied)
         {
             if (!_browser.Started) return supplied;

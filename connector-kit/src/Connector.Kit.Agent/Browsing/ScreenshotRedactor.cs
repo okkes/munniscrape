@@ -32,6 +32,14 @@ public sealed class ScreenshotRedactor
     private const float CaptureTimeoutMs = 10_000;
 
     /// <summary>
+    /// How long ONE live frame may take. Far shorter than a still's, because a
+    /// stream that stalls for ten seconds is a stream nobody is watching any
+    /// more - and there is another shutter along in eighty milliseconds, so
+    /// giving up early costs a frame rather than a picture.
+    /// </summary>
+    private const float LiveFrameTimeoutMs = 5_000;
+
+    /// <summary>
     /// Reports which secret-bearing elements currently hold content. Walks
     /// shadow roots because a modern login form is frequently inside one, and
     /// <c>document.querySelectorAll</c> does not pierce them.
@@ -375,6 +383,129 @@ public sealed class ScreenshotRedactor
         finally
         {
             await RevealAsync(page).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// A JPEG of the whole visible page for a LIVE VIEW, and the size it was
+    /// taken at. Read the name as a warning.
+    ///
+    /// <b>This method does not carry the guarantees the rest of this class
+    /// exists to provide.</b> It is a method beside <see cref="CaptureAsync"/>
+    /// and never a flag on it, so that no caller reaches the live path by
+    /// passing an argument, and so that a reader of <see cref="CaptureAsync"/>
+    /// never has to wonder which rules were in force. Nothing on the artifact
+    /// or relay paths changes because of it.
+    ///
+    /// What it drops, and why the drop is not a weakening:
+    ///
+    /// <b>Layer 1, the refusal, does not apply.</b> Refusing to photograph a
+    /// page whose password box holds content is right when WE typed that
+    /// password: the value is ours, it is already at rest elsewhere, and a
+    /// picture of it buys nobody anything. A live view is the opposite
+    /// situation - the human is deliberately typing into the provider's own
+    /// page, watching this stream to do it - so the refusal would produce a
+    /// black rectangle at exactly the moment the feature exists for, and the
+    /// person typing would have no way to know why. What makes that acceptable
+    /// is the custody change around it and not a softer rule: a provider served
+    /// this way declares no credential fields, so nothing of ours was typed in,
+    /// the frames are never stored, and they go to one attached viewer.
+    ///
+    /// <b>Layer 2, concealment, does not run - and that is a gap rather than a
+    /// decision.</b> The design's R5 (conceal every secret-bearing element the
+    /// human has NOT focused, and re-check that the visible set is exactly the
+    /// authorised one) needs focus tracking and a slow re-check cadence that do
+    /// not exist yet, and it cannot run per frame at four DOM walks a shutter
+    /// anyway. Until it does, everything the page renders is streamed. That is
+    /// what the owner asked for - the whole visible page, cookie banners and
+    /// error messages included - and it is why a live view may only be opened
+    /// on a provider that declares no secret fields at all.
+    ///
+    /// The encoder settings are the measured ones and each is load-bearing:
+    ///
+    /// <list type="bullet">
+    /// <item><b>JPEG, never PNG</b> - and the measurement behind that is worth
+    /// stating honestly rather than as a slogan, because it only holds one way
+    /// round. Measured here at 390x844: a flat login form is 6.3 KB as PNG and
+    /// 9.1 KB as JPEG q60, so PNG WINS on the page this feature is named after.
+    /// Put a photograph on that page - a hero image, a gradient, the captcha
+    /// tiles this pipeline also carries - and it is 194 KB as PNG against 14 KB
+    /// as JPEG. The encoder is fixed to JPEG because the bad case has to be
+    /// survivable at twelve frames a second and the good case merely costs 3 KB;
+    /// choosing per stream, by taking frame zero twice, is the better answer and
+    /// is not built.</item>
+    /// <item><b><c>Scale = Css</c>.</b> One image pixel is one CSS pixel, which
+    /// is what lets a returned fraction be multiplied by the frame's own size
+    /// and land on the page - the device scale factor drops out of the
+    /// coordinate mapping entirely instead of having to be carried and agreed
+    /// on. (Note the default is <c>device</c>, which is why the still relay's
+    /// <see cref="CaptureAsync"/> ships more bytes than it needs on a retina
+    /// agent. Not changed here: a lower-resolution captcha is harder for a
+    /// human to read, and that path is proven.)</item>
+    /// <item><b>No <c>Clip</c>.</b> The whole visible page is streamed, by the
+    /// owner's decision, because a human filling in a login has to be able to
+    /// see the cookie banner in front of it and the error message under
+    /// it.</item>
+    /// <item><b><c>Animations</c> left at the default.</b> The relay disables
+    /// them because a still of a half-drawn widget is unanswerable; a stream
+    /// heals that by itself 80 ms later, and fighting a page's animations
+    /// continuously at 12 frames a second is a cost with nothing to buy.</item>
+    /// <item><b><c>Caret = Hide</c>.</b> A blinking caret changes the pixels
+    /// about twice a second forever, which alone would defeat the change
+    /// detection the whole cadence rests on. The cost is real and is not paid
+    /// for yet: the human cannot see where they are typing until the focused
+    /// element's rectangle is shipped beside the frame and the client draws its
+    /// own.</item>
+    /// </list>
+    /// </summary>
+    internal async Task<LiveCapture> CaptureLiveFrameAsync(IPage page, int quality, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentOutOfRangeException.ThrowIfLessThan(quality, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(quality, 100);
+        ct.ThrowIfCancellationRequested();
+
+        if (page.IsClosed)
+        {
+            _logger.LogDebug("no live frame: the page is closed");
+            return LiveCapture.Refused;
+        }
+
+        // The size has to be the size the bytes really are, because every event
+        // the human sends back is a fraction that gets multiplied by it.
+        // `Scale = Css` below makes one image pixel one CSS pixel, so the
+        // viewport IS the frame - and a context with no viewport, which is a
+        // headed window sized by whoever is sitting at it, has no such number.
+        // Refused rather than guessed: a guessed size is every subsequent click
+        // landing somewhere nobody chose.
+        if (page.ViewportSize is not { } viewport || viewport.Width <= 0 || viewport.Height <= 0)
+        {
+            _logger.LogWarning(
+                "no live frame: this browser context has no viewport, so a frame would carry no size to map against");
+            return LiveCapture.Refused;
+        }
+
+        try
+        {
+            var jpeg = await page.ScreenshotAsync(new PageScreenshotOptions
+            {
+                Type = ScreenshotType.Jpeg,
+                Quality = quality,
+                Scale = ScreenshotScale.Css,
+                Caret = ScreenshotCaret.Hide,
+                Timeout = LiveFrameTimeoutMs,
+            }).ConfigureAwait(false);
+
+            return LiveCapture.Of(jpeg, viewport.Width, viewport.Height);
+        }
+        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
+        {
+            // Debug and not warning: a missed shutter in a stream is one frame
+            // the viewer never sees, the next one is 80 ms away, and a page
+            // that is navigating misses several in a row as a matter of course.
+            // Logging each at warning would bury the stop that matters.
+            _logger.LogDebug(ex, "no live frame: the shutter failed");
+            return LiveCapture.Refused;
         }
     }
 
