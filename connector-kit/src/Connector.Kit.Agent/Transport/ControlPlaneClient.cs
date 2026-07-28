@@ -201,6 +201,16 @@ public sealed class ControlPlaneClient
         {
             throw new ControlPlaneException(ex.StatusCode, $"POST {path} did not reach the control plane", ex);
         }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // Nobody asked us to stop; the HTTP client gave up. It arrives as a
+            // TaskCanceledException, which is an OperationCanceledException, so
+            // a caller that reads it as cancellation quietly ends a stream a
+            // human is still typing into. Named as what it is, and transient, so
+            // it is retried and counted like any other transport failure.
+            throw new ControlPlaneException(
+                HttpStatusCode.RequestTimeout, $"POST {path} timed out before the control plane answered", ex);
+        }
 
         using var _ = response;
 
@@ -237,6 +247,14 @@ public sealed class ControlPlaneClient
         catch (HttpRequestException ex)
         {
             throw new ControlPlaneException(ex.StatusCode, $"GET {path} did not reach the control plane", ex);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // As for the frame POST: the client's own timeout is not the caller
+            // stopping the stream, and a long poll is exactly the call most
+            // likely to hit it.
+            throw new ControlPlaneException(
+                HttpStatusCode.RequestTimeout, $"GET {path} timed out before the control plane answered", ex);
         }
 
         using var _ = response;

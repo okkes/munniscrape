@@ -38,6 +38,10 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     private int _challengesRaised;
     private ChallengeAnswer? _answer;
     private RaiseChallengeRequest? _raised;
+    private long _highestSequence;
+    private int _discardedFrames;
+    private int _stallFrames;
+    private int _stallInputPolls;
 
     /// <summary>One live frame as it arrived on the wire.</summary>
     internal readonly record struct PostedFrame(long Sequence, string? Size, int Bytes);
@@ -48,8 +52,51 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
         lock (_gate) _answer = new ChallengeAnswer { ChallengeId = "chl_test", Value = value };
     }
 
+    /// <summary>
+    /// Takes the answer away again, so a second challenge on the same job waits
+    /// for its own.
+    /// </summary>
+    public void SaysNothingYet()
+    {
+        lock (_gate) _answer = null;
+    }
+
+    /// <summary>
+    /// How long this agent's HTTP client waits before giving up on a request.
+    ///
+    /// Real and short in the tests that want it, because the failure it produces
+    /// - a <c>TaskCanceledException</c>, which IS an
+    /// <c>OperationCanceledException</c> - is indistinguishable from the caller
+    /// stopping the stream unless somebody checks whose token fired.
+    /// </summary>
+    public TimeSpan ClientTimeout { get; set; } = TimeSpan.FromSeconds(100);
+
+    /// <summary>The next <paramref name="count"/> frame POSTs never answer at all.</summary>
+    public void StallFrames(int count)
+    {
+        lock (_gate) _stallFrames = count;
+    }
+
+    /// <summary>The next <paramref name="count"/> input long polls never answer at all.</summary>
+    public void StallInputPolls(int count)
+    {
+        lock (_gate) _stallInputPolls = count;
+    }
+
     /// <summary>Every live frame this agent posted, in order.</summary>
     public IReadOnlyList<PostedFrame> Frames { get { lock (_gate) return [.. _frames]; } }
+
+    /// <summary>
+    /// Frames that arrived numbered no higher than one already held, and were
+    /// therefore thrown away.
+    ///
+    /// This is the connector's own rule, and it is modelled here because the
+    /// agent cannot see it: the slot is per JOB, a frame that does not advance
+    /// the count is discarded, and the response is 200 either way. An agent
+    /// restarting the count for a second live view thus streams into a bin, and
+    /// nothing at either end says so.
+    /// </summary>
+    public int DiscardedFrames { get { lock (_gate) return _discardedFrames; } }
 
     /// <summary>
     /// Set to refuse the live channel, as a control plane whose challenge has
@@ -78,7 +125,11 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     public string? FailureCode => Failure?.Code;
 
     public HttpClient CreateClient(string name) =>
-        new(this, disposeHandler: false) { BaseAddress = new Uri("https://control-plane.test/") };
+        new(this, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://control-plane.test/"),
+            Timeout = ClientTimeout,
+        };
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
@@ -95,6 +146,7 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
         if (path.EndsWith("/live/frame", StringComparison.Ordinal))
         {
             if (LiveChannelGone) return Empty(HttpStatusCode.Gone);
+            if (Stalling(ref _stallFrames)) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
 
             var bytes = await request.Content!.ReadAsByteArrayAsync(ct);
             var sequence = long.Parse(
@@ -103,6 +155,10 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
             lock (_gate)
             {
                 _frames.Add(new PostedFrame(sequence, Header(request, ControlPlaneClient.SizeHeader), bytes.Length));
+
+                // The connector's one slot per job, modelled: higher or nothing.
+                if (sequence > _highestSequence) _highestSequence = sequence;
+                else _discardedFrames++;
             }
 
             return Empty(HttpStatusCode.NoContent);
@@ -110,6 +166,8 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
 
         if (path.EndsWith("/live/input", StringComparison.Ordinal))
         {
+            if (Stalling(ref _stallInputPolls)) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+
             LiveInputBatch? batch;
             lock (_gate) batch = _pendingInput.Count == 0 ? null : _pendingInput.Dequeue();
 
@@ -169,6 +227,22 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     /// <summary>Asserts the last failure carried a given code.</summary>
     public bool FailedWith(ErrorCode code) =>
         string.Equals(FailureCode, ErrorCatalog.Wire(code), StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether this request is one of the ones told to hang, taking it off the
+    /// count as it goes. A stalled request is answered by nobody: the caller's
+    /// own client timeout is what ends it, which is the whole point.
+    /// </summary>
+    private bool Stalling(ref int remaining)
+    {
+        lock (_gate)
+        {
+            if (remaining <= 0) return false;
+
+            remaining--;
+            return true;
+        }
+    }
 
     private static string? Header(HttpRequestMessage request, string name) =>
         request.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null;

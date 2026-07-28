@@ -303,10 +303,32 @@ internal static class LiveInputReplay
                 // a click sequence no human had timed; these arrived carrying
                 // the human's own rhythm, and re-spacing them would make a drag
                 // take longer than the drag did.
-                await DispatchAsync(input, points[i], scrolls[i], surface, ct).ConfigureAwait(false);
-                dispatched++;
+                if (await DispatchAsync(input, points[i], scrolls[i], surface, ct).ConfigureAwait(false))
+                {
+                    dispatched++;
+                    continue;
+                }
+
+                // An event this build has no arm for. The pre-pass above and
+                // LiveInput.IsWellFormed both refuse one before it gets here, so
+                // this is belt and braces - and the braces are the point, because
+                // the belt broke once: the same case threw out of a `default:`
+                // commented "unreachable", escaped this catch, and faulted the
+                // input task for the rest of the login. Local to the one event,
+                // logged by KIND, and the rest of the batch still goes.
+                logger.LogWarning(
+                    "live input: event {Index} of {Count} is a {Kind} this agent does not replay; " +
+                    "it is skipped and the rest of the batch stands",
+                    i, events.Count, input.Kind);
             }
-            catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
+            // Every failure that is not cancellation, and not only the two
+            // Playwright raises when a page goes away. A batch is one human
+            // gesture and a login is a hundred of them: whatever went wrong with
+            // THIS one, the channel has to be able to carry the next, and an
+            // exception nobody predicted must not be the thing that decides
+            // otherwise. Cancellation still goes up, because that is the stream
+            // being stopped and there is nothing left to carry.
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // A text event's failure is logged WITHOUT the exception, on
                 // purpose. Relayed characters must never reach a string that
@@ -341,49 +363,76 @@ internal static class LiveInputReplay
     }
 
     /// <summary>
-    /// One event, dispatched whole.
+    /// One event, dispatched whole. True when it reached the page, false when
+    /// this build has no way to deliver it.
     ///
     /// A press and a release move first, because Playwright's mouse has no
     /// coordinates on either: they act wherever the pointer already is, which
     /// after any pause is wherever the last event left it.
+    ///
+    /// <b>This method does not throw over an event it cannot read.</b> It used
+    /// to, out of a <c>default:</c> arm marked unreachable - and the arm was
+    /// reachable, because the enum converter takes an INTEGER as readily as a
+    /// name, so <c>"kind": 99</c> arrived as a value nothing had a word for.
+    /// The <see cref="ArgumentOutOfRangeException"/> matched no catch filter
+    /// around the call, escaped the replay loop and faulted the whole input
+    /// task: frames kept arriving, nothing the human did worked again for the
+    /// rest of the login, and the only trace was one debug line at disposal.
+    /// The contract now refuses an undefined kind before it ever gets here.
+    /// This stays anyway, as a false rather than a throw, because "unreachable"
+    /// was the claim that failed and a refusal that costs one event is worth
+    /// more than a comment.
+    ///
+    /// The nullable arms are the same argument. <c>Text</c> and <c>Key</c> are
+    /// checked rather than forgiven with <c>!</c>: a null one would otherwise
+    /// throw out of here too, from a line whose only defence was the same
+    /// pre-pass.
     /// </summary>
-    private static async Task DispatchAsync(
+    internal static async Task<bool> DispatchAsync(
         LiveInput input, (double X, double Y) point, double scroll, ILiveSurface surface, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(surface);
+
         switch (input.Kind)
         {
             case LiveInputKind.Move:
                 await surface.MoveAsync(point.X, point.Y, ct).ConfigureAwait(false);
-                break;
+                return true;
 
             case LiveInputKind.Down:
                 await surface.MoveAsync(point.X, point.Y, ct).ConfigureAwait(false);
                 await surface.DownAsync(ct).ConfigureAwait(false);
-                break;
+                return true;
 
             case LiveInputKind.Up:
                 await surface.MoveAsync(point.X, point.Y, ct).ConfigureAwait(false);
                 await surface.UpAsync(ct).ConfigureAwait(false);
-                break;
+                return true;
 
             case LiveInputKind.Scroll:
                 await surface.MoveAsync(point.X, point.Y, ct).ConfigureAwait(false);
                 await surface.ScrollAsync(scroll, ct).ConfigureAwait(false);
-                break;
+                return true;
 
             case LiveInputKind.Text:
-                await surface.InsertTextAsync(input.Text!, ct).ConfigureAwait(false);
-                break;
+                if (input.Text is not { Length: > 0 } text) return false;
+
+                await surface.InsertTextAsync(text, ct).ConfigureAwait(false);
+                return true;
 
             case LiveInputKind.Key:
-                await surface.PressAsync(input.Key!.Value, ct).ConfigureAwait(false);
-                break;
+                // The literal is re-checked here for the same reason: the one
+                // implementation of PressAsync throws on a key it has no word
+                // for, and that throw is one refactor away from being the only
+                // thing between an unknown key and a faulted input channel.
+                if (input.Key is not { } key || LiveKeys.LiteralFor(key) is null) return false;
+
+                await surface.PressAsync(key, ct).ConfigureAwait(false);
+                return true;
 
             default:
-                // Unreachable: the pre-pass refuses anything IsWellFormed does
-                // not recognise. Present so that adding a verb to the grammar
-                // without adding an arm here is a refusal rather than silence.
-                throw new ArgumentOutOfRangeException(nameof(input), input.Kind, "not a live input kind this agent replays");
+                return false;
         }
     }
 

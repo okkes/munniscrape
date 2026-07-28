@@ -114,10 +114,14 @@ internal sealed record LiveViewOptions
 ///
 /// <b>Stopping is terminal.</b> <see cref="Stop"/> latches through an
 /// <see cref="Interlocked.Exchange(ref int, int)"/> and is checked after every
-/// await, so no path resumes a stream that has been stopped. Four things stop
+/// await, so no path resumes a stream that has been stopped. Five things stop
 /// it today: the caller's token, the page navigating off the allowed origin,
-/// the control plane saying the channel is gone, and a run of transport
-/// failures.
+/// the control plane saying the channel is gone, a run of transport failures,
+/// and either loop failing in a way nobody predicted. The last is deliberate
+/// and it is new: a leg that dies quietly leaves a live view that lies - a
+/// frozen picture that still accepts keystrokes, or a moving one that answers
+/// none - so an unexpected end is logged at error and takes the whole stream
+/// with it, back to the passive wait the challenge underneath always was.
 ///
 /// <b>The origin latch, and what it is not.</b> The design wants an exact-host
 /// allowlist the adapter declares in its manifest, refused if it contains a
@@ -143,6 +147,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
     private readonly ControlPlaneClient _control;
     private readonly ILiveSurface _surface;
     private readonly string _jobId;
+    private readonly LiveFrameSequence _sequence;
     private readonly LiveViewOptions _options;
     private readonly ILogger _logger;
     private readonly TimeProvider _time;
@@ -171,11 +176,18 @@ internal sealed class LiveViewSession : IAsyncDisposable
 
     private long _burstUntilTicks;
 
+    /// <param name="sequence">
+    /// The JOB's frame counter, not this session's. Passed in rather than
+    /// started here, because a second live view inside one job must continue the
+    /// count - see <see cref="LiveFrameSequence"/> for what happens when it does
+    /// not.
+    /// </param>
     public LiveViewSession(
         IPage page,
         ScreenshotRedactor redactor,
         ControlPlaneClient control,
         string jobId,
+        LiveFrameSequence sequence,
         LiveViewOptions options,
         ILogger logger,
         TimeProvider time,
@@ -184,6 +196,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(redactor);
         ArgumentNullException.ThrowIfNull(control);
+        ArgumentNullException.ThrowIfNull(sequence);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(time);
@@ -193,6 +206,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
         _redactor = redactor;
         _control = control;
         _jobId = jobId;
+        _sequence = sequence;
         _options = options;
         _logger = logger;
         _time = time;
@@ -222,8 +236,13 @@ internal sealed class LiveViewSession : IAsyncDisposable
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
+        // The sequence it resumes from is in the line because it is the one
+        // thing about a SECOND live view that used to be invisible from both
+        // ends: the connector discards a frame that does not advance the count
+        // and answers 200, so "this view starts at 0" was a silent stall.
         _logger.LogInformation(
-            "job {JobId}: live view open on {Origins} at up to {Fps:0.#} fps", _jobId, Describe(_origins), Fps());
+            "job {JobId}: live view open on {Origins} at up to {Fps:0.#} fps, frames continue from {Sequence}",
+            _jobId, Describe(_origins), Fps(), _sequence.Last);
 
         // The navigation latch is wired before the first shutter, so a page
         // that leaves while the browser is still launching is caught too.
@@ -289,7 +308,6 @@ internal sealed class LiveViewSession : IAsyncDisposable
 
     private async Task CaptureLoopAsync(CancellationToken ct)
     {
-        var sequence = 0L;
         var lastHash = Array.Empty<byte>();
         var lastPostedAt = _time.GetUtcNow();
         var failures = 0;
@@ -336,7 +354,13 @@ internal sealed class LiveViewSession : IAsyncDisposable
                     continue;
                 }
 
-                sequence++;
+                // The JOB's counter and never this session's. Taken here, after
+                // suppression has decided the bytes are worth sending, so a
+                // static form does not burn numbers - and kept whether or not
+                // the POST below lands, because a retried frame is a different
+                // picture and re-using a number is the one thing the connector
+                // refuses.
+                var sequence = _sequence.Next();
                 var frame = new LiveFrame
                 {
                     Sequence = sequence,
@@ -351,7 +375,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
                 {
                     accepted = await _control.PostLiveFrameAsync(_jobId, frame, ct).ConfigureAwait(false);
                 }
-                catch (ControlPlaneException ex)
+                catch (Exception ex) when (IsTransportBlip(ex, ct))
                 {
                     _meter.Failed(shutter);
                     ReportIfDue();
@@ -393,9 +417,21 @@ internal sealed class LiveViewSession : IAsyncDisposable
                 await WaitAsync(ct).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // The stream ending is not an error, whichever end ended it.
+            // OUR token. The stream ending is not an error, whichever end ended
+            // it - and the filter is what makes that claim true. Without it this
+            // arm also swallowed HttpClient.Timeout, which arrives as a
+            // TaskCanceledException from a POST nobody asked to stop.
+        }
+        catch (Exception ex)
+        {
+            // Anything else ends the shutter, so it ends the stream too, loudly.
+            // A shutter that dies while the input leg lives is the worst of the
+            // two failures: the human's keystrokes keep reaching a page they can
+            // no longer see, against a frozen picture of it.
+            _logger.LogError(ex, "job {JobId}: the live view's shutter failed", _jobId);
+            Stop("the shutter failed");
         }
     }
 
@@ -416,7 +452,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
                     batch = await _control.PollLiveInputAsync(_jobId, cursor, ct).ConfigureAwait(false);
                     failures = 0;
                 }
-                catch (ControlPlaneException ex)
+                catch (Exception ex) when (IsTransportBlip(ex, ct))
                 {
                     if (++failures >= _options.MaxConsecutiveFailures)
                     {
@@ -486,10 +522,40 @@ internal sealed class LiveViewSession : IAsyncDisposable
                 if (dispatched > 0) Nudge();
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            // Our token, as above. A poll that the HTTP client gave up on is
+            // not this, and is retried by the handler further up.
+        }
+        catch (Exception ex)
+        {
+            // The human's taps stop landing and there is no way to tell them so
+            // through a picture. Stopping is the honest end: the challenge
+            // underneath is passive, so it degrades to the wait a consumer that
+            // had never heard of a live view would have got.
+            _logger.LogError(ex, "job {JobId}: the live view's input channel failed", _jobId);
+            Stop("the input channel failed");
         }
     }
+
+    /// <summary>
+    /// Whether an exception is the transport having a bad moment, rather than
+    /// this stream being stopped.
+    ///
+    /// The distinction is the whole point. <c>HttpClient.Timeout</c> surfaces as
+    /// a <see cref="TaskCanceledException"/>, which IS an
+    /// <see cref="OperationCanceledException"/> - so one stalled POST and one
+    /// stalled long poll are indistinguishable from "the challenge is over"
+    /// unless somebody asks whose token fired. Nobody asked, so a single stall
+    /// ended that leg for the rest of the login, silently, without the retry
+    /// budget ever seeing a failure.
+    ///
+    /// Our token is the only thing that means stop. Everything else is a blip on
+    /// a home line with a human still typing, and gets counted and retried like
+    /// any other transport failure.
+    /// </summary>
+    private static bool IsTransportBlip(Exception ex, CancellationToken ct) =>
+        ex is ControlPlaneException || (ex is OperationCanceledException && !ct.IsCancellationRequested);
 
     /// <summary>
     /// Puts the shutter into its burst tier and wakes it now, so the first

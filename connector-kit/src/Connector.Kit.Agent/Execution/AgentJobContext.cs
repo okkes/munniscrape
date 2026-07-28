@@ -40,6 +40,19 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
     private readonly List<JobStep> _reported = [];
     private readonly Task _pump;
 
+    /// <summary>
+    /// The live frame counter for THIS JOB, which is what the wire says it is.
+    ///
+    /// It lives here rather than in the session because a job can raise more
+    /// than one live view - a login, then a step-up - and the connector holds
+    /// one slot per job that refuses any frame not numbered higher than the one
+    /// it has. A per-session counter therefore made the second view's every
+    /// frame vanish at the connector, answered 200, while the consumer went on
+    /// showing the last picture of the first. This context is built once per
+    /// job, so it is the smallest thing that outlives a session.
+    /// </summary>
+    private readonly LiveFrameSequence _frames = new();
+
     private int _credentialSubmitted;
     private JobStep _lastStep = JobStep.AgentAssigned;
     private int _disposed;
@@ -450,7 +463,7 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
         {
             var page = await _browser.PageAsync(ct).ConfigureAwait(false);
             var session = new LiveViewSession(
-                page, _redactor, _control, JobId, new LiveViewOptions(), _logger, _time);
+                page, _redactor, _control, JobId, _frames, new LiveViewOptions(), _logger, _time);
 
             session.Start(ct);
             return session;

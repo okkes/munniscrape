@@ -141,6 +141,82 @@ public class LiveInputReplayTests
     }
 
     /// <summary>
+    /// An event kind this build has no word for never reaches the page, and the
+    /// batch carrying it is refused whole.
+    ///
+    /// The half of the fix that is a proof of unreachability: the contract's
+    /// <c>IsWellFormed</c> now asks <c>Enum.IsDefined</c> first, so the
+    /// dispatcher's own refusal below is belt and braces. Worth pinning here,
+    /// because the enum converter reads an integer as happily as a name and this
+    /// is the only thing that says so.
+    /// </summary>
+    [Fact]
+    public async Task An_event_kind_this_build_does_not_know_never_reaches_the_page()
+    {
+        var surface = new RecordingLiveSurface();
+
+        var dispatched = await ReplayAsync(surface,
+            [Down(0.5, 0.5), new LiveInput { Kind = (LiveInputKind)99, X = 0.5, Y = 0.5 }, Up(0.5, 0.5)]);
+
+        Assert.Equal(0, dispatched);
+        Assert.Empty(surface.Trace);
+    }
+
+    /// <summary>
+    /// And if one ever did reach the dispatcher, it costs that one event.
+    ///
+    /// This is the arm that was commented "unreachable" and was not: it threw an
+    /// <c>ArgumentOutOfRangeException</c>, which matched no catch filter around
+    /// the call, escaped the replay loop and faulted the input task for the rest
+    /// of the login - frames still arriving, nothing the human did working
+    /// again, one debug line at disposal. Called directly, because the only
+    /// route to it from outside is a hole that has since been closed, and
+    /// "unreachable" is exactly the claim that failed the first time.
+    /// </summary>
+    [Fact]
+    public async Task A_kind_that_reaches_the_dispatcher_anyway_is_refused_rather_than_thrown()
+    {
+        var surface = new RecordingLiveSurface();
+
+        var dispatched = await LiveInputReplay.DispatchAsync(
+            new LiveInput { Kind = (LiveInputKind)99, X = 0.5, Y = 0.5 },
+            (195, 422),
+            scroll: 0,
+            surface,
+            CancellationToken.None);
+
+        Assert.False(dispatched);
+        Assert.Empty(surface.Trace);
+    }
+
+    /// <summary>
+    /// The same for the two arms that used to trust a nullable: a key with no
+    /// literal, and a text event with no text, are refusals at the dispatcher
+    /// and not exceptions out of it.
+    ///
+    /// <c>PressAsync</c>'s one real implementation throws on a key it has no
+    /// word for, and <c>input.Text!</c> was a null-forgiving operator standing
+    /// in for a check that lived somewhere else entirely.
+    /// </summary>
+    [Theory]
+    [InlineData(LiveInputKind.Key)]
+    [InlineData(LiveInputKind.Text)]
+    public async Task An_arm_whose_payload_is_missing_refuses_rather_than_throws(LiveInputKind kind)
+    {
+        var surface = new RecordingLiveSurface();
+
+        var dispatched = await LiveInputReplay.DispatchAsync(
+            new LiveInput { Kind = kind, Key = kind is LiveInputKind.Key ? (LiveKey)999 : null },
+            (195, 422),
+            scroll: 0,
+            surface,
+            CancellationToken.None);
+
+        Assert.False(dispatched);
+        Assert.Empty(surface.Trace);
+    }
+
+    /// <summary>
     /// The batch is the unit, and a half-dispatched batch is worse than none:
     /// refusing only the bad event in the middle of Down/Move/Up leaves the
     /// button held down on a page the human is still looking at, with no event

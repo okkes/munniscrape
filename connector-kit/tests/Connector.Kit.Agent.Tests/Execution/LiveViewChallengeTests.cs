@@ -1,4 +1,6 @@
+using Connector.Kit.Agent.Execution;
 using Connector.Kit.Challenges;
+using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Tests;
 
@@ -97,5 +99,78 @@ public class LiveViewChallengeTests
 
         Assert.Equal("chl_test", answer.ChallengeId);
         Assert.Empty(rig.Control.Frames);
+    }
+
+    /// <summary>
+    /// Two live views in one job, and one frame count between them.
+    ///
+    /// This is the only place the defect was ever visible, because it is the
+    /// only place a second session is built: <c>AskAsync</c> opens a new one
+    /// every time it is handed a live view, and the counter used to start inside
+    /// it. The wire says the sequence is monotonic per JOB, and the connector
+    /// enforces that by discarding any frame not numbered higher than the one in
+    /// its slot - while answering 200, so the agent carried on posting into a
+    /// bin. What the human saw was the last picture of the previous step,
+    /// indefinitely, and what they did with it was type a password into a stale
+    /// login page.
+    ///
+    /// A real browser, because the frame has to be real: the counter only means
+    /// anything on a picture that was actually taken and actually posted.
+    /// </summary>
+    [Fact]
+    public async Task Two_live_views_in_one_job_share_one_frame_count()
+    {
+        using var rig = new TestRig(ScriptedAdapter.Wedges());
+        await using var context = rig.Context(TestRig.Login(budgetSeconds: 60));
+
+        // A real navigation to a real host, fulfilled locally. The stream pins
+        // to the origin the page is on when it opens, and about:blank has none.
+        var page = await context.Browser.PageAsync(CancellationToken.None);
+        await page.RouteAsync("**/*", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = LiveFrameTests.LoginForm(),
+        }));
+
+        await page.GotoAsync("https://provider.test/login");
+
+        await OneLiveViewAsync(rig, context);
+        var afterFirst = rig.Control.Frames.Count;
+        await OneLiveViewAsync(rig, context);
+
+        Assert.True(rig.Control.Frames.Count > afterFirst, "the second live view posted nothing at all");
+
+        // The whole assertion. Not "the numbers look plausible" - the connector's
+        // own rule, applied to what actually arrived.
+        Assert.Equal(0, rig.Control.DiscardedFrames);
+    }
+
+    /// <summary>
+    /// Raises one live view, waits for it to photograph something, and answers
+    /// it - which is how the platform closes a stream.
+    /// </summary>
+    private static async Task OneLiveViewAsync(TestRig rig, AgentJobContext context)
+    {
+        var already = rig.Control.Frames.Count;
+        rig.Control.SaysNothingYet();
+
+        var asked = Task.Run(() => context.AskAsync(
+            new Challenge
+            {
+                Type = ChallengeType.LiveView,
+                PromptKey = "connect.challenge.live_login",
+                ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(60),
+            },
+            CancellationToken.None));
+
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
+        while (rig.Control.Frames.Count <= already)
+        {
+            Assert.True(DateTimeOffset.UtcNow < deadline, "timed out waiting for a live frame");
+            await Task.Delay(25);
+        }
+
+        rig.Control.Answer(string.Empty);
+        await asked;
     }
 }

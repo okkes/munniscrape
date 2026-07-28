@@ -67,6 +67,50 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     }
 
     /// <summary>
+    /// A SECOND live view in the same job carries on counting where the first
+    /// stopped.
+    ///
+    /// The sequence is monotonic per JOB, and the connector enforces it by
+    /// keeping one slot and discarding any frame not numbered higher than the
+    /// one it holds - while answering 200, so the agent is never told. A counter
+    /// that restarted per view therefore made every frame of a job's second live
+    /// view disappear at the connector, with the consumer still displaying the
+    /// last picture of the first: a stale login page, and a human typing a
+    /// password into it. Nothing at either end logged a thing.
+    ///
+    /// So the fake counts what the connector would throw away, and the assertion
+    /// is that it threw away nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_second_live_view_in_one_job_continues_the_count()
+    {
+        var (page, control) = await OpenAsync();
+
+        // One counter, because there is one job. This is the whole fix: it is
+        // owned above the session, so it outlives one.
+        var frames = new LiveFrameSequence();
+
+        await using (var first = Session(page, control, frames: frames))
+        {
+            first.Start(CancellationToken.None);
+            await UntilAsync(() => control.Frames.Count >= 1, "a frame from the first view");
+        }
+
+        var afterFirst = control.Frames.Count;
+
+        await using (var second = Session(page, control, frames: frames))
+        {
+            second.Start(CancellationToken.None);
+            await UntilAsync(() => control.Frames.Count > afterFirst, "a frame from the second view");
+        }
+
+        Assert.Equal(0, control.DiscardedFrames);
+        Assert.True(
+            control.Frames[afterFirst].Sequence > control.Frames[afterFirst - 1].Sequence,
+            $"the second view restarted the count at {control.Frames[afterFirst].Sequence}");
+    }
+
+    /// <summary>
     /// A page nobody is touching sends nothing.
     ///
     /// This is the entire bandwidth argument: a login form is static until
@@ -275,6 +319,116 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     }
 
     /// <summary>
+    /// A frame POST the HTTP client gives up on is one lost frame, not the end
+    /// of the stream.
+    ///
+    /// <c>HttpClient.Timeout</c> surfaces as a <c>TaskCanceledException</c>,
+    /// which derives from <c>OperationCanceledException</c> - the same type the
+    /// shutter loop uses to recognise "we are being stopped". Treating the two
+    /// as one meant a single stalled POST ended the shutter permanently and
+    /// silently: the retry budget saw no failure, no line was logged above
+    /// debug, and the viewer kept the last picture on screen.
+    /// </summary>
+    [Fact]
+    public async Task A_frame_post_the_client_gives_up_on_is_retried_rather_than_ending_the_stream()
+    {
+        var (page, control) = await OpenAsync();
+        control.ClientTimeout = TimeSpan.FromMilliseconds(250);
+        control.StallFrames(1);
+
+        await using var session = Session(page, control, o => o with
+        {
+            IdleInterval = TimeSpan.FromMilliseconds(40),
+        });
+
+        session.Start(CancellationToken.None);
+
+        await UntilAsync(() => control.Frames.Count >= 1, "a frame to land after the stalled one");
+        Assert.False(session.Stopped);
+    }
+
+    /// <summary>
+    /// And the same on the other leg: an input long poll the client gives up on
+    /// leaves the human's keyboard connected.
+    ///
+    /// The worse of the two failures, because it is invisible from the outside.
+    /// Frames carry on arriving, so the view looks alive; every tap and every
+    /// keystroke from that moment on does nothing at all, for the rest of the
+    /// login, and the only trace is one debug line when the session is disposed.
+    /// </summary>
+    [Fact]
+    public async Task An_input_poll_the_client_gives_up_on_leaves_the_channel_open()
+    {
+        var (page, control) = await OpenAsync();
+        control.ClientTimeout = TimeSpan.FromMilliseconds(250);
+        control.StallInputPolls(1);
+
+        await using var session = Session(page, control, o => o with
+        {
+            InputRetryDelay = TimeSpan.FromMilliseconds(100),
+        });
+
+        session.Start(CancellationToken.None);
+        await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
+
+        var (x, y) = await CentreOfAsync(page, "#password");
+        control.SendLiveInput(new LiveInputBatch
+        {
+            Events =
+            [
+                new LiveInput { Kind = LiveInputKind.Down, X = x, Y = y, Sequence = 1 },
+                new LiveInput { Kind = LiveInputKind.Up, X = x, Y = y, Sequence = 2 },
+                new LiveInput { Kind = LiveInputKind.Text, Text = "still-listening", Sequence = 3 },
+            ],
+        });
+
+        await UntilAsync(
+            async () => await ValueOfAsync(page, "#password") == "still-listening",
+            "the input channel to survive a poll the client timed out");
+    }
+
+    /// <summary>
+    /// A batch this build cannot read costs the batch and nothing more.
+    ///
+    /// The enum converter takes an integer as readily as a name, so a kind
+    /// nobody has a word for is a thing that can arrive. It used to reach a
+    /// <c>default:</c> arm marked unreachable, throw a type no catch filter
+    /// around it matched, and fault the input task for the rest of the login.
+    /// The contract refuses it now; this asserts the whole chain, which is the
+    /// only place the consequence was ever visible - the human types again and
+    /// it works.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_this_build_cannot_read_does_not_end_the_input_channel()
+    {
+        var (page, control) = await OpenAsync();
+        await using var session = Session(page, control);
+
+        session.Start(CancellationToken.None);
+        await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
+
+        var (x, y) = await CentreOfAsync(page, "#password");
+        control.SendLiveInput(new LiveInputBatch
+        {
+            Events = [new LiveInput { Kind = (LiveInputKind)99, X = x, Y = y, Sequence = 1 }],
+        });
+
+        control.SendLiveInput(new LiveInputBatch
+        {
+            Events =
+            [
+                new LiveInput { Kind = LiveInputKind.Down, X = x, Y = y, Sequence = 2 },
+                new LiveInput { Kind = LiveInputKind.Up, X = x, Y = y, Sequence = 3 },
+                new LiveInput { Kind = LiveInputKind.Text, Text = "after", Sequence = 4 },
+            ],
+        });
+
+        await UntilAsync(
+            async () => await ValueOfAsync(page, "#password") == "after",
+            "the input channel to outlive an event nobody has a word for");
+    }
+
+    /// <summary>
     /// A control plane that will not take a frame is a stop, not a retry. It is
     /// how a revoked capability or a finished challenge reaches the shutter.
     /// </summary>
@@ -363,7 +517,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         IPage page,
         FakeControlPlane control,
         Func<LiveViewOptions, LiveViewOptions>? tune = null,
-        bool log = false)
+        bool log = false,
+        LiveFrameSequence? frames = null)
     {
         var options = new LiveViewOptions();
         if (tune is not null) options = tune(options);
@@ -373,6 +528,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             new ScreenshotRedactor(TestRig.Manifest, NullLogger.Instance),
             new ControlPlaneClient(control, NullLogger<ControlPlaneClient>.Instance),
             "job_live_test",
+            frames ?? new LiveFrameSequence(),
             options,
             log ? new TestOutputLogger(output) : NullLogger.Instance,
             TimeProvider.System);
