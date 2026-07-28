@@ -37,6 +37,40 @@ export function toRelayError(error, status = 200) {
   return new RelayError(status, error, null);
 }
 
+/**
+ * `X-Live-Sequence` as a number this app can count with, or a refusal.
+ *
+ * This was `Number(header)`, and `Number` is the wrong tool for a header: it
+ * answers NaN for a missing or malformed value, NaN is itself a Number, and the
+ * caller latches whatever it is handed as the cursor it sends back. Every later
+ * poll then goes out as `?after=NaN`, which `LiveHeaders.After` refuses with a
+ * 400 - and refuses for ever, because a cursor that is not a number can never
+ * advance past anything. One malformed header, once, and the stream is dead for
+ * the rest of the login with no symptom but a picture that stopped moving.
+ *
+ * So an absent or unparseable sequence is an ERROR the stream reports and
+ * retries past, never a value it keeps. Parsed strictly rather than with
+ * `Number`, which also accepts '0x10', '1e3', '' and ' 12 ' - none of which
+ * `LiveHeaders.FormatSequence` can produce, so accepting them only widens what
+ * a broken middlebox can talk this end into believing. Bounded at
+ * `Number.MAX_SAFE_INTEGER` because the field is a .NET `long` and anything
+ * above 2^53 stops surviving the trip through a JavaScript number - it would
+ * come back as a different integer than the one the connector is holding.
+ */
+export function liveSequence(raw) {
+  if (typeof raw === 'string' && /^-?\d+$/.test(raw)) {
+    const value = Number(raw);
+    if (Number.isSafeInteger(value)) return value;
+  }
+
+  throw new RelayError(
+    0,
+    { code: 'internal', retriable: true, user_action: 'retry', message_key: 'connect.error.internal' },
+    raw === null || raw === undefined
+      ? 'live frame: no X-Live-Sequence header'
+      : `live frame: unusable X-Live-Sequence '${String(raw).slice(0, 40)}'`);
+}
+
 async function request(method, path, body) {
   let response;
   try {
@@ -171,10 +205,14 @@ export const api = {
       throw new RelayError(response.status, payload?.error, 'live frame');
     }
 
+    // Before the body is read, so a frame this app could never ask a second
+    // question about costs one header parse rather than a blob.
+    const sequence = liveSequence(response.headers.get('X-Live-Sequence'));
+
     const [width, height] = String(response.headers.get('X-Live-Size') ?? '').split('x').map(Number);
 
     return {
-      sequence: Number(response.headers.get('X-Live-Sequence') ?? 0),
+      sequence,
       // Reported for the human and for a size change nobody expected. It must
       // never reach the coordinate maths - those are fractions of the picture
       // as DRAWN, and dividing by the frame's own pixel size instead is how

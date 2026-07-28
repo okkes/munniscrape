@@ -20,11 +20,17 @@
  * lands somewhere else once the agent maps it back. The failure is silent and
  * it is silent on exactly the devices that matter.
  *
- * THE SHADOW FIELD NEVER HOLDS MORE THAN ONE KEYSTROKE. It is read as a delta
- * from `beforeinput` and emptied on every `input`, so at no point is there a
- * password sitting in this document for a screenshot, an extension, a crash
- * dump or a `document.querySelector` to find. That is the whole defence against
- * this end accumulating what the other end refuses to store.
+ * THE SHADOW FIELD NEVER ACCUMULATES. It is read as a delta from `beforeinput`
+ * and emptied on every `input`, so at no point is there a password sitting in
+ * this document for a screenshot, an extension, a crash dump or a
+ * `document.querySelector` to find. That is the whole defence against this end
+ * accumulating what the other end refuses to store.
+ *
+ * The one thing it does hold is an IME's composition buffer, and it has to:
+ * clearing the value mid-composition is how you abort a composition, and
+ * composition is what Android gesture typing and iOS autocorrect are made of.
+ * So the clearing waits for `compositionend` - a word, not a login - or for
+ * `blur` if that never comes.
  *
  * OBJECT URLS ARE REVOKED EVERY FRAME. A blob URL keeps its bytes alive for the
  * life of the document, and the garbage collector may not touch them. At a
@@ -91,7 +97,7 @@ const MOVE_MS = 50;
 const RETRY_MS = 1500;
 
 /**
- * A floor under the frame loop.
+ * A floor under the empty half of the frame loop.
  *
  * A 204 means the server's own long-poll window closed with nothing new, so
  * going straight round again is right. A 204 that comes back instantly is a
@@ -99,6 +105,25 @@ const RETRY_MS = 1500;
  * denial of service we wrote ourselves.
  */
 const IDLE_FLOOR_MS = 250;
+
+/**
+ * A floor under the half of the loop that gets a picture, which is the half
+ * that spins in the HEALTHY case rather than the broken one.
+ *
+ * The connector answers a frame poll the instant it holds something newer than
+ * `after`, so during a live stream most polls return immediately - and a loop
+ * with a floor only under its 204 path goes straight round again at whatever
+ * rate the network allows. Measured against a server with a frame always ready:
+ * 22 polls in 300ms, against 3 for a stream running at the agent's real shutter
+ * rate. That is a request storm aimed at the one process holding the human's
+ * login open, produced by the stream working rather than by it failing.
+ *
+ * Set below the agent's measured cadence - ~9-10 shutters a second, so
+ * ~100-110ms apart - so a stream that is working is never throttled by it. What
+ * is slept is the REMAINDER of the floor, so a poll that already parked 100ms
+ * waiting for the next photograph owes nothing at all.
+ */
+const FRAME_FLOOR_MS = 80;
 
 /** How many dots the local echo draws before it stops counting them out. */
 const ECHO_CAP = 24;
@@ -108,7 +133,66 @@ const SCROLL_STEP = 0.6;
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
+/**
+ * Sleeps out whatever is left of `floor` since `started`, and nothing when the
+ * work already took that long.
+ *
+ * The remainder rather than the whole floor, because the two are only the same
+ * thing when the request was instant. A poll that parked 90ms of a 100ms floor
+ * owes 10ms; sleeping the full floor instead would halve the frame rate of a
+ * stream that is working perfectly.
+ */
+const floorSince = async (started, floor) => {
+  const rest = floor - (Date.now() - started);
+  if (rest > 0) await sleep(rest);
+};
+
+/**
+ * An abort is this end hanging up on purpose, and it is never a failure.
+ *
+ * `api.js` rethrows it as itself rather than as a relay error precisely so this
+ * distinction can be made here - the two halves are one mechanism and only work
+ * as a pair.
+ */
+const isAbort = (error) => error?.name === 'AbortError';
+
 const clamp = (value) => Math.min(1, Math.max(0, value));
+
+/**
+ * The consumer's event counter, shared by every live view this document ever
+ * renders instead of restarting at 1 inside each one.
+ *
+ * The connector hands the agent its input with
+ * `RemoveAll(e => e.Sequence <= after)`, where `after` is the highest sequence
+ * the AGENT has already been given - a high-water mark over THIS counter, held
+ * per job and not per renderer. A second live view on the same job that started
+ * counting from 1 again would therefore have every event it ever queued deleted
+ * unread by the agent's next poll: the human types, the queue is emptied at the
+ * connector, and nothing on the page moves. A second view on one job is not
+ * exotic - a captcha followed by a streamed sign-in is two renderers on one job,
+ * and so is a re-login raised in the middle of a fetch.
+ *
+ * So the counter sits at module scope and never goes backwards. It is seeded
+ * from the wall clock so that a page RELOAD in the middle of a job continues
+ * the series rather than restarting it, and takes `previous + 1` whenever the
+ * clock has not moved or has moved backwards - several events inside one
+ * millisecond, or an NTP correction. `Date.now()` is ~1.8e12, which is a long
+ * on the wire and a safe integer here, with room for centuries of both.
+ *
+ * What this cannot fix, from here or from anywhere in a client: two DEVICES on
+ * one job. Their clocks agree to within seconds, so their series interleave and
+ * each one's poll deletes the other's queued events. The wire carries no field
+ * saying who is driving; the design says the live channel is single-driver, and
+ * that is a rule the connector has to enforce at the capability rather than one
+ * a client can keep on its own.
+ */
+let lastSequence = 0;
+
+export function nextSequence() {
+  const now = Date.now();
+  lastSequence = lastSequence < now ? now : lastSequence + 1;
+  return lastSequence;
+}
 
 /**
  * The page this is a picture of, as far as anything here can tell.
@@ -307,6 +391,20 @@ export function liveViewChallenge(challenge, ctx) {
         frame = await stream.frame(after, abort.signal);
       } catch (error) {
         if (!running) return;
+
+        // An abort is not a failure and must not be drawn as one. It is this
+        // end closing the poll on purpose - the tab went to the background,
+        // which happens every time the human switches to their password
+        // manager or their SMS - and rendering it as an error put an empty red
+        // alert on the screen (the shape `errorBlock` reads is a RelayError's,
+        // and an AbortError carries none of it) and then burned the 1500ms
+        // retry delay on a pause that had already ended. Coming back to the
+        // app cost a second and a half of frozen picture and a scare.
+        if (isAbort(error)) {
+          await floorSince(started, FRAME_FLOOR_MS);
+          continue;
+        }
+
         // Recoverable, and worth recovering from: a relay restart or a phone
         // changing network should not end a login. Saying so matters more
         // than retrying does - a frozen picture with no message looks live.
@@ -333,7 +431,20 @@ export function liveViewChallenge(challenge, ctx) {
       }
 
       if (!frame) {
-        if (Date.now() - started < IDLE_FLOOR_MS) await sleep(IDLE_FLOOR_MS);
+        await floorSince(started, IDLE_FLOOR_MS);
+        continue;
+      }
+
+      // A sequence this end cannot count with can never become the cursor.
+      // `api.js` refuses an absent or unparseable `X-Live-Sequence` before it
+      // reaches here, which is where the fix belongs; this is the same refusal
+      // for any other frame source wired into `ctx.live`. Latching a NaN would
+      // send `?after=NaN` on every later poll, which the connector answers with
+      // a 400 for ever, because a cursor that is not a number cannot advance.
+      if (!Number.isSafeInteger(frame.sequence)) {
+        mount(problem, note('That picture arrived with no usable frame number, so the stream cannot ',
+          'move past it. That is a bug in whatever is serving the frames, not in the provider.'));
+        await sleep(RETRY_MS);
         continue;
       }
 
@@ -342,6 +453,11 @@ export function liveViewChallenge(challenge, ctx) {
       // allows.
       after = after === null || frame.sequence > after ? frame.sequence : after + 1;
       draw(frame);
+
+      // The floor under the path that actually got a picture. See
+      // FRAME_FLOOR_MS: this is the one that was missing, and the case it
+      // bounds is a stream that is working rather than one that is broken.
+      await floorSince(started, FRAME_FLOOR_MS);
     }
   };
 
@@ -380,7 +496,6 @@ export function liveViewChallenge(challenge, ctx) {
   // ── outgoing events ─────────────────────────────────────────────────────
 
   const queue = [];
-  let sequence = 0;
   let sending = false;
   let flushTimer = null;
 
@@ -418,8 +533,10 @@ export function liveViewChallenge(challenge, ctx) {
   const push = (event) => {
     if (!running || ctx.expired()) return;
 
-    sequence += 1;
-    queue.push({ ...event, sequence });
+    // From the document-wide series, never from a counter of this renderer's
+    // own. See `nextSequence`: a second live view on one job that restarted at
+    // 1 would have every event it queued deleted, unread, at the connector.
+    queue.push({ ...event, sequence: nextSequence() });
 
     if (event.kind === TEXT || event.kind === KEY) {
       inFlight += event.kind === TEXT ? event.text.length : 1;
@@ -637,11 +754,41 @@ export function liveViewChallenge(challenge, ctx) {
     pushText(text);
   });
 
-  // Emptied after every event, without exception, including for an inputType
-  // this build did not recognise - the field being empty matters more than the
-  // keystroke being delivered. `beforeinput` fires before the character lands,
-  // so the clearing has to happen after it does.
-  shadow.addEventListener('input', () => { shadow.value = ''; });
+  // Emptied after every event, including for an inputType this build did not
+  // recognise - the field being empty matters more than the keystroke being
+  // delivered. `beforeinput` fires before the character lands, so the clearing
+  // has to happen after it does.
+  //
+  // With ONE exception, and it is the difference between this working on a
+  // phone and not: never while an IME is composing. Assigning to `value`
+  // mid-composition is the documented way to ABORT a composition, and
+  // composition is the machinery Android gesture typing and iOS autocorrect
+  // both run on - so clearing here cancelled the gesture the human was in the
+  // middle of, every time, and the symptom on a real phone is a keyboard that
+  // deletes what you swipe. `beforeinput` already refuses to send partial
+  // composition text, so nothing was being relayed during that window either:
+  // the field was cleared and the keystrokes went nowhere.
+  //
+  // What sits in the field during composition is the composition buffer, which
+  // is a word rather than a password: `compositionend` above empties it the
+  // instant the word is committed, and `blur` below empties it if the human
+  // walks away mid-word. That window is the price of an IME working at all,
+  // and it is bounded by one composition rather than by the login.
+  shadow.addEventListener('input', () => {
+    if (composing) return;
+    shadow.value = '';
+  });
+
+  // The backstop on that exception. A composition abandoned because focus moved
+  // - the human tapped the picture, switched apps, or the page took focus away -
+  // may never deliver its `compositionend`, and a `composing` flag left true
+  // would leave the buffer sitting in the document for the rest of the login.
+  // Clearing unconditionally here costs nothing when the field is already empty,
+  // which is its normal state.
+  shadow.addEventListener('blur', () => {
+    composing = false;
+    shadow.value = '';
+  });
 
   // Belt and braces for the moment the whole feature turns on: a soft keyboard
   // that did not appear on pointerdown is one press away here, and a press on
