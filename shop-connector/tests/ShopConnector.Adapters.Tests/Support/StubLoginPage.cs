@@ -90,6 +90,18 @@ internal sealed class StubLoginPage : ILoginPage
     public Task<PageMatch?> FindAsync(IReadOnlyList<string> selectors, int timeoutMs, CancellationToken ct) =>
         Task.FromResult<PageMatch?>(Match(selectors) is null ? null : new PageMatch(Box));
 
+    /// <summary>
+    /// Recorded, never simulated. Whether a real frame has finished drawing is
+    /// a question only a browser answers, and a stub that pretended to know
+    /// would be pinning its own guess. What the offline suite CAN pin is that
+    /// the gate asks before it photographs, and in that order.
+    /// </summary>
+    public Task SettleAsync(IReadOnlyList<string> selectors, TimeSpan budget, CancellationToken ct)
+    {
+        Record("settle");
+        return Task.CompletedTask;
+    }
+
     public Task<bool> FillAsync(
         IReadOnlyList<string> selectors, string value, int timeoutMs, CancellationToken ct)
     {

@@ -158,6 +158,16 @@ internal sealed record CaptchaSpec
     public int ProbeMs { get; init; } = 500;
 
     /// <summary>
+    /// How long to let a widget finish drawing before photographing it.
+    ///
+    /// Three seconds because a captcha token ages while we wait and this is
+    /// spent on every relayed round, but a puzzle image on a home line is
+    /// routinely slower than one poll. Nothing depends on it being enough:
+    /// when it runs out the picture is taken anyway.
+    /// </summary>
+    public TimeSpan SettleBudget { get; init; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
     /// How many gestures the relay will carry for one wall before handing it
     /// back.
     ///
@@ -541,6 +551,14 @@ internal sealed class CaptchaGate
         if (crop is null) return GridRound.Lost;
 
         ctx.Progress(JobStep.AwaitingHuman);
+
+        // Let the widget finish drawing before photographing it. A tap makes
+        // hCaptcha clear its panel and fetch the next puzzle, and the picture
+        // taken in that gap is of a spinner - which the account's owner is
+        // then asked to solve, on a clock. Best effort by construction: this
+        // returns either way and the shutter follows regardless, so a widget
+        // that never settles costs one budget and nothing else.
+        await page.SettleAsync(where, _spec.SettleBudget, ct).ConfigureAwait(false);
 
         // The crop is what lets the redactor drop the rest of the page rather
         // than merely obscure it - and here it is also the frame the answer

@@ -100,4 +100,71 @@ internal static class PageOps
 
         return new CropRegion((int)box.X, (int)box.Y, (int)box.Width, (int)box.Height);
     }
+
+    /// <summary>How often to re-ask while a frame is still drawing.</summary>
+    public const int SettlePollMs = 150;
+
+    /// <summary>
+    /// Whether a frame has anything worth photographing in it yet.
+    ///
+    /// The distinction that matters is between "not finished" and "finished
+    /// with nothing" - `complete === false` is an image still arriving, while
+    /// `complete === true` with a zero natural width is one that will never
+    /// arrive, and waiting on the second is waiting forever. A frame with no
+    /// images at all is Pending too: the widget swaps its picture in a moment
+    /// after it clears the panel, and that gap is precisely the one a live run
+    /// was photographed in.
+    /// </summary>
+    private const string DrawScript = @"
+() => {
+  const imgs = Array.from(document.images || []);
+  if (imgs.length === 0) return 'pending';
+  if (imgs.some(i => !i.complete)) return 'pending';
+  return imgs.some(i => i.naturalWidth > 0) ? 'drawn' : 'broken';
+}";
+
+    /// <summary>
+    /// Reads the draw state of the frame OWNED by the first matching element.
+    ///
+    /// Anything unreadable answers <see cref="DrawState.Broken"/> rather than
+    /// <see cref="DrawState.Pending"/>: a frame we cannot ask about is not a
+    /// frame we should wait on, and the caller photographs regardless.
+    /// </summary>
+    public static async Task<DrawState> IsDrawnAsync(
+        IPage page, IReadOnlyList<string> selectors, CancellationToken ct)
+    {
+        try
+        {
+            var handle = await FindAsync(page, selectors, SettlePollMs, ct).ConfigureAwait(false);
+            if (handle is null) return DrawState.Broken;
+
+            var frame = await handle.ContentFrameAsync().ConfigureAwait(false);
+            if (frame is null) return DrawState.Broken;
+
+            var state = await frame.EvaluateAsync<string>(DrawScript).ConfigureAwait(false);
+            return state switch
+            {
+                "drawn" => DrawState.Drawn,
+                "pending" => DrawState.Pending,
+                _ => DrawState.Broken,
+            };
+        }
+        catch (Exception ex) when (IsSelectorMiss(ex) || ex is PlaywrightException)
+        {
+            return DrawState.Broken;
+        }
+    }
+}
+
+/// <summary>What a frame currently has in it. Only <c>Pending</c> is worth waiting on.</summary>
+internal enum DrawState
+{
+    /// <summary>Still arriving, or nothing there yet.</summary>
+    Pending,
+
+    /// <summary>At least one picture is drawn.</summary>
+    Drawn,
+
+    /// <summary>Finished with nothing, or unreadable. Never improves, so never waited on.</summary>
+    Broken,
 }

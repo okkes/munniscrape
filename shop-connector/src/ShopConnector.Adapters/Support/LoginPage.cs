@@ -47,6 +47,32 @@ internal interface ILoginPage
     Task<PageMatch?> FindAsync(IReadOnlyList<string> selectors, int timeoutMs, CancellationToken ct);
 
     /// <summary>
+    /// Waits for the matched frame to finish drawing itself, so a relayed
+    /// picture is of the question and not of a spinner.
+    ///
+    /// Observed live: hCaptcha accepted a tap, swapped in its next puzzle, and
+    /// was photographed mid-swap. The account's owner received an empty grey
+    /// panel with a loading spinner in it - 12 KB where a drawn puzzle is
+    /// 250 KB - and a ten-minute clock they could not answer.
+    ///
+    /// BEST EFFORT, and that is the whole design. It returns when the frame
+    /// has settled OR when the budget runs out, and its caller photographs
+    /// either way. It cannot fail a login, cannot skip a fallback, and cannot
+    /// turn a slow widget into a refusal: the worst it does is spend the
+    /// budget and leave things exactly as they were. That matters more than
+    /// the accuracy of any readiness signal, because every failure mode this
+    /// could otherwise introduce lands on somebody halfway through connecting
+    /// a grocery account.
+    /// </summary>
+    /// Defaulted to doing nothing, because "wait for it to be drawn" is only
+    /// answerable by something with a real frame underneath it. A page that
+    /// cannot observe drawing does not pretend to - and since the caller
+    /// photographs either way, not waiting is a slower picture at worst and
+    /// never a different outcome.
+    Task SettleAsync(IReadOnlyList<string> selectors, TimeSpan budget, CancellationToken ct) =>
+        Task.CompletedTask;
+
+    /// <summary>
     /// Types a value into the first matching input. False when nothing
     /// matched - the caller decides what a missing field means, because
     /// "fill something else instead" is never the answer.
@@ -159,6 +185,26 @@ internal sealed class PlaywrightLoginPage : ILoginPage
         if (handle is null) return null;
 
         return new PageMatch(await PageOps.CropAsync(handle).ConfigureAwait(false));
+    }
+
+    public async Task SettleAsync(IReadOnlyList<string> selectors, TimeSpan budget, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow + budget;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var drawn = await PageOps.IsDrawnAsync(_page, selectors, ct).ConfigureAwait(false);
+
+            // Settled, or settled as far as it will ever get. A frame whose
+            // images are finished-and-broken is NOT still loading, and
+            // treating the two the same is how a page with one 404 waits out
+            // the whole budget with the puzzle sitting there answerable.
+            if (drawn != DrawState.Pending) return;
+
+            await Task.Delay(PageOps.SettlePollMs, ct).ConfigureAwait(false);
+        }
     }
 
     public async Task<bool> FillAsync(

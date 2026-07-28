@@ -165,7 +165,7 @@ public sealed class AlbertHeijnCaptchaTests
         // page while a secret field holds content, so a capture attempted
         // first comes back empty, nobody is ever asked anything, and nothing
         // is ever clicked.
-        Assert.Equal(new[] { "clear-secrets", "screenshot", "tap" }, page.Calls);
+        Assert.Equal(new[] { "clear-secrets", "settle", "screenshot", "tap" }, page.Calls);
         Assert.False(page.HoldsSecret);
 
         // Bytes, therefore: the picture the human tapped exists.
@@ -334,7 +334,7 @@ public sealed class AlbertHeijnCaptchaTests
 
         // Tick, then picture, then taps - and the box, still on the page and
         // still matching its selector, is left alone.
-        Assert.Equal(new[] { "clear-secrets", "click", "screenshot", "tap" }, page.Calls);
+        Assert.Equal(new[] { "clear-secrets", "click", "settle", "screenshot", "tap" }, page.Calls);
         Assert.Equal(Checkbox, Assert.Single(page.Clicked));
 
         var challenge = Assert.Single(ctx.Asked);
@@ -365,7 +365,7 @@ public sealed class AlbertHeijnCaptchaTests
             ctx, page, new StubRedirectWaiter(Redirect, afterWaits: 2), taps, CancellationToken.None);
 
         Assert.Equal(Redirect, captured);
-        Assert.Equal(new[] { "clear-secrets", "click", "screenshot", "tap" }, page.Calls);
+        Assert.Equal(new[] { "clear-secrets", "click", "settle", "screenshot", "tap" }, page.Calls);
 
         // Ticked once and then asked - not ticked again, which would undo it.
         Assert.Equal(Checkbox, Assert.Single(page.Clicked));
