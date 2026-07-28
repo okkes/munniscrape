@@ -187,6 +187,34 @@ public sealed class LiveInputTests
         Assert.False(batch.IsWellFormed());
     }
 
+    // ── the kind itself ──────────────────────────────────────────────────
+
+    [Fact]
+    public void A_kind_this_build_has_never_heard_of_is_refused()
+    {
+        // The hole this closes was reachable end to end and silent. The enum
+        // converter accepts an INTEGER as well as a name, so an undefined kind
+        // deserialised cleanly, passed validation because its coordinates were
+        // fine, reached the agent's dispatch switch and threw out of a default
+        // arm commented "unreachable". That throw faulted the replay loop for
+        // the rest of the login: frames kept arriving, every tap and keystroke
+        // did nothing, and one debug line at disposal was the only trace.
+        //
+        // An unknown NAME was refused all along. An unknown NUMBER was not,
+        // which is why this asserts on the number.
+        Assert.False(new LiveInput { Kind = (LiveInputKind)99, X = 0.5, Y = 0.5 }.IsWellFormed());
+    }
+
+    [Fact]
+    public void An_unknown_kind_is_refused_before_its_own_fields_are_read()
+    {
+        // Belt and braces on the ordering: an undefined kind with a perfectly
+        // good payload must still be refused, or the check is only running on
+        // the paths that were already failing.
+        Assert.False(new LiveInput { Kind = (LiveInputKind)7, Text = "hello" }.IsWellFormed());
+        Assert.False(new LiveInput { Kind = (LiveInputKind)(-1), Key = LiveKey.Enter }.IsWellFormed());
+    }
+
     // ── frames ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -197,6 +225,15 @@ public sealed class LiveInputTests
         // otherwise misplace every event with nothing to notice it by.
         var frame = new LiveFrame { Sequence = 12, Width = 390, Height = 844, Bytes = [1, 2, 3] };
 
-        Assert.Equal("12;390x844", frame.ToHeaderValue());
+        Assert.Equal(12, frame.Sequence);
+        Assert.Equal(390, frame.Width);
+        Assert.Equal(844, frame.Height);
+
+        // It does NOT format its own header. It used to, as "12;390x844" - one
+        // combined value matching neither X-Live-Sequence nor X-Live-Size, so
+        // it was a trap with a test holding it in place: anyone who used it
+        // would have produced a header no reader on either leg could parse.
+        // The two headers are the wire and the wire is written down elsewhere.
+        Assert.Null(typeof(LiveFrame).GetMethod("ToHeaderValue"));
     }
 }

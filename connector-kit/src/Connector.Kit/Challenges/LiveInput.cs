@@ -124,6 +124,19 @@ public sealed record LiveInput
     /// </summary>
     public bool IsWellFormed()
     {
+        // The kind itself, first and before anything reads it.
+        //
+        // This was missing, and the hole was not theoretical. The enum
+        // converter accepts an INTEGER as well as a name, so `"kind": 99`
+        // deserialises to an undefined value, passed the checks below because
+        // its coordinates were fine, reached the agent's dispatch switch, and
+        // threw out of a `default:` arm commented "unreachable". The throw
+        // escaped the replay loop and faulted it for the rest of the login:
+        // frames kept arriving, every tap and keystroke did nothing, and the
+        // only trace was one debug line at disposal. An unknown name was
+        // refused all along; an unknown NUMBER was not.
+        if (!System.Enum.IsDefined(Kind)) return false;
+
         if (Kind is LiveInputKind.Text)
         {
             return !string.IsNullOrEmpty(Text) && Text.Length <= MaxTextLength && !HasControlCharacters(Text);
@@ -191,18 +204,33 @@ public sealed record LiveInputBatch
 /// </summary>
 public sealed record LiveFrame
 {
-    /// <summary>Monotonic per session. A consumer showing frame 40 ignores 39 arriving late.</summary>
+    /// <summary>
+    /// Monotonic per JOB, and the scope is the whole of it.
+    ///
+    /// This said "per session" and the wire said per job, so the two were built
+    /// to the two readings and neither could see the other's. The connector
+    /// keeps one slot per job and refuses a frame whose sequence is not higher
+    /// than the one it holds; an agent counting from zero for each live view
+    /// therefore had a SECOND view's frames silently discarded - answered 200,
+    /// nothing logged - while the consumer went on displaying the last picture
+    /// of the previous step. A human types a password into a stale login page
+    /// and nothing anywhere says so.
+    ///
+    /// Per job, so a second view continues the count rather than restarting it.
+    /// A consumer showing frame 40 ignores 39 arriving late.
+    /// </summary>
     public required long Sequence { get; init; }
 
     public required int Width { get; init; }
 
     public required int Height { get; init; }
 
-    /// <summary>JPEG. Never PNG: a photograph of a rendered page is a photograph.</summary>
+    /// <summary>
+    /// JPEG. Never PNG - though not for the reason first assumed: measured, a
+    /// flat login form is actually SMALLER as PNG (6.3 KB against 9.1 KB), and
+    /// it is the photographic case that decides this. A captcha with a picture
+    /// in it is 14 KB as JPEG and 194 KB as PNG, and the stream has to survive
+    /// its worst frame rather than its best.
+    /// </summary>
     public required byte[] Bytes { get; init; }
-
-    [SuppressMessage("Design", "CA1024:Use properties where appropriate",
-        Justification = "Formats for a wire header, which is not a property of the frame.")]
-    public string ToHeaderValue() =>
-        string.Create(CultureInfo.InvariantCulture, $"{Sequence};{Width}x{Height}");
 }
