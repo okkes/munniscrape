@@ -70,6 +70,123 @@ public sealed class ScreenshotRedactor
 }";
 
     /// <summary>
+    /// Marks a secret-bearing element invisible for the duration of one
+    /// capture, remembering whatever inline visibility it had so the page can
+    /// be handed back exactly as it was found.
+    ///
+    /// <c>visibility:hidden</c> and never <c>display:none</c>: hidden keeps the
+    /// element's box, so nothing on the page moves. A reflow here would shift
+    /// the very widget the crop was measured against, and every tap answered
+    /// against that picture would land at the difference.
+    ///
+    /// Returns the number of elements it could not conceal. Anything above
+    /// zero means the caller must fall back to masking.
+    /// </summary>
+    private const string ConcealScript = @"
+(keys) => {
+  const roots = [document];
+  const walk = (root, depth) => {
+    if (depth > 8 || roots.length > 500) return;
+    let all;
+    try { all = root.querySelectorAll('*'); } catch (e) { return; }
+    for (const el of all) {
+      if (el.shadowRoot) { roots.push(el.shadowRoot); walk(el.shadowRoot, depth + 1); }
+    }
+  };
+  walk(document, 0);
+
+  let missed = 0;
+  const conceal = (selector) => {
+    for (const root of roots) {
+      let els;
+      try { els = root.querySelectorAll(selector); } catch (e) { continue; }
+      for (const el of els) {
+        try {
+          if (!el.hasAttribute('data-connector-vis')) {
+            el.setAttribute('data-connector-vis', el.style.visibility || '');
+          }
+          el.style.setProperty('visibility', 'hidden', 'important');
+          if (getComputedStyle(el).visibility !== 'hidden') missed++;
+        } catch (e) { missed++; }
+      }
+    }
+  };
+
+  conceal('input[type=password]');
+  conceal('input[autocomplete*=password i]');
+  for (const probe of keys) { conceal(probe[1]); }
+  return missed;
+}";
+
+    /// <summary>
+    /// Re-checks, after the shutter, that every secret-bearing element was
+    /// still concealed AND still empty. A page that re-rendered mid-capture and
+    /// restored its own styling is the one way a dropped mask could have let
+    /// something through, so the bytes are thrown away rather than trusted.
+    /// </summary>
+    private const string ConcealedProbeScript = @"
+(keys) => {
+  const roots = [document];
+  const walk = (root, depth) => {
+    if (depth > 8 || roots.length > 500) return;
+    let all;
+    try { all = root.querySelectorAll('*'); } catch (e) { return; }
+    for (const el of all) {
+      if (el.shadowRoot) { roots.push(el.shadowRoot); walk(el.shadowRoot, depth + 1); }
+    }
+  };
+  walk(document, 0);
+
+  const bad = [];
+  const check = (selector, label) => {
+    for (const root of roots) {
+      let els;
+      try { els = root.querySelectorAll(selector); } catch (e) { continue; }
+      for (const el of els) {
+        let shown = true;
+        try { shown = getComputedStyle(el).visibility !== 'hidden'; } catch (e) { shown = true; }
+        const v = (el.value !== undefined && el.value !== null) ? el.value : el.getAttribute('value');
+        const filled = typeof v === 'string' && v.length > 0;
+        if (shown || filled) { bad.push(label); return; }
+      }
+    }
+  };
+
+  check('input[type=password]', 'password-input');
+  check('input[autocomplete*=password i]', 'password-autocomplete');
+  for (const probe of keys) { check(probe[1], probe[0]); }
+  return bad;
+}";
+
+    /// <summary>Puts back exactly the inline visibility each element arrived with.</summary>
+    private const string RevealScript = @"
+() => {
+  const roots = [document];
+  const walk = (root, depth) => {
+    if (depth > 8 || roots.length > 500) return;
+    let all;
+    try { all = root.querySelectorAll('*'); } catch (e) { return; }
+    for (const el of all) {
+      if (el.shadowRoot) { roots.push(el.shadowRoot); walk(el.shadowRoot, depth + 1); }
+    }
+  };
+  walk(document, 0);
+
+  for (const root of roots) {
+    let els;
+    try { els = root.querySelectorAll('[data-connector-vis]'); } catch (e) { continue; }
+    for (const el of els) {
+      try {
+        const previous = el.getAttribute('data-connector-vis') || '';
+        el.style.removeProperty('visibility');
+        if (previous) el.style.visibility = previous;
+        el.removeAttribute('data-connector-vis');
+      } catch (e) { /* leaving one hidden is safe; showing it again is not */ }
+    }
+  }
+}";
+
+    /// <summary>
     /// A structural skeleton of the page. Only its HASH ever leaves the agent,
     /// so it may be as detailed as it likes - but it deliberately carries no
     /// text and no attribute values, because a digest that changed whenever an
@@ -179,43 +296,170 @@ public sealed class ScreenshotRedactor
 
         if (!await IsSafeToCaptureAsync(page, ct).ConfigureAwait(false)) return [];
 
-        var options = new PageScreenshotOptions
+        if (crop is { } size && (size.Width <= 0 || size.Height <= 0))
         {
-            Type = ScreenshotType.Png,
-            Animations = ScreenshotAnimations.Disabled,
-            Caret = ScreenshotCaret.Hide,
-            Mask = MaskLocators(page),
-            MaskColor = "#000000",
-            Timeout = CaptureTimeoutMs,
-        };
-
-        if (crop is { } region)
-        {
-            if (region.Width <= 0 || region.Height <= 0)
-            {
-                _logger.LogWarning("no capture: crop region {W}x{H} is empty", region.Width, region.Height);
-                return [];
-            }
-
-            options.Clip = new Clip
-            {
-                X = region.X,
-                Y = region.Y,
-                Width = region.Width,
-                Height = region.Height,
-            };
+            _logger.LogWarning("no capture: crop region {W}x{H} is empty", size.Width, size.Height);
+            return [];
         }
+
+        // Conceal rather than mask, when the page lets us.
+        //
+        // A mask is painted by Playwright into the browser's TOP LAYER - an
+        // `x-pw-glass` element declared `popover: manual` - from the target's
+        // `getBoundingClientRect()`. Nothing on the page can be stacked above
+        // it. So when a provider fronts its login with an overlay, as Albert
+        // Heijn's hCaptcha does, the mask for the password field UNDERNEATH
+        // that overlay is painted straight across the question the human is
+        // being asked, and the challenge arrives unanswerable.
+        //
+        // Hiding the element ourselves reaches the same end by a route that
+        // does not paint: an element with `visibility: hidden` contributes no
+        // pixels of its own, whatever appears in it and whoever is stacked
+        // above it. That is a property we set and then re-check, not one
+        // inferred from a hit test - `elementFromPoint` answers "what is
+        // topmost and hit-testable", which a translucent modal backdrop
+        // satisfies while remaining perfectly see-through, so it can never
+        // license dropping a mask.
+        //
+        // Masking stays as the fallback for any page that will not be
+        // concealed. An unreadable challenge is a bad answer; a photographed
+        // password is not an answer at all.
+        var concealed = await ConcealAsync(page, ct).ConfigureAwait(false);
 
         try
         {
-            return await page.ScreenshotAsync(options).ConfigureAwait(false);
+            var options = new PageScreenshotOptions
+            {
+                Type = ScreenshotType.Png,
+                Animations = ScreenshotAnimations.Disabled,
+                Caret = ScreenshotCaret.Hide,
+                MaskColor = "#000000",
+                Timeout = CaptureTimeoutMs,
+            };
+
+            if (!concealed) options.Mask = MaskLocators(page);
+
+            if (crop is { } region)
+            {
+                options.Clip = new Clip
+                {
+                    X = region.X,
+                    Y = region.Y,
+                    Width = region.Width,
+                    Height = region.Height,
+                };
+            }
+
+            byte[] png;
+            try
+            {
+                png = await page.ScreenshotAsync(options).ConfigureAwait(false);
+            }
+            catch (PlaywrightException ex)
+            {
+                // Deliberately no retry without the masks: the fallback that
+                // drops a safety layer is worse than no image.
+                _logger.LogWarning(ex, "no capture: the screenshot itself failed");
+                return [];
+            }
+
+            // The shutter and the checks around it are not one instant. A page
+            // that re-rendered mid-capture could have restored its own styling
+            // and filled a field in the same tick, and with the masks dropped
+            // there would be nothing else standing between that value and the
+            // picture. Cheaper to throw the bytes away than to be wrong.
+            if (concealed && !await StillConcealedAsync(page, ct).ConfigureAwait(false)) return [];
+
+            return png;
         }
-        catch (PlaywrightException ex)
+        finally
         {
-            // Deliberately no retry without the masks: the fallback that drops
-            // a safety layer is worse than no image.
-            _logger.LogWarning(ex, "no capture: the screenshot itself failed");
-            return [];
+            await RevealAsync(page).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Hides every secret-bearing element on the page. False when even one
+    /// frame or one element would not go, which puts the caller back on masks.
+    /// </summary>
+    private async Task<bool> ConcealAsync(IPage page, CancellationToken ct)
+    {
+        var all = true;
+
+        foreach (var frame in page.Frames)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                var missed = await frame.EvaluateAsync<int>(ConcealScript, _probes).ConfigureAwait(false);
+                if (missed > 0)
+                {
+                    _logger.LogDebug(
+                        "{Missed} element(s) in frame {Url} would not be concealed; masking instead",
+                        missed, Describe(frame));
+                    all = false;
+                }
+            }
+            catch (PlaywrightException ex)
+            {
+                _logger.LogDebug(ex, "frame {Url} could not be concealed; masking instead", Describe(frame));
+                all = false;
+            }
+        }
+
+        return all;
+    }
+
+    /// <summary>
+    /// True when every secret-bearing element is still both hidden and empty.
+    /// </summary>
+    private async Task<bool> StillConcealedAsync(IPage page, CancellationToken ct)
+    {
+        foreach (var frame in page.Frames)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            string[] bad;
+            try
+            {
+                bad = await frame.EvaluateAsync<string[]>(ConcealedProbeScript, _probes).ConfigureAwait(false);
+            }
+            catch (PlaywrightException ex)
+            {
+                _logger.LogWarning(ex, "discarding the capture: frame {Url} could not be re-checked", Describe(frame));
+                return false;
+            }
+
+            if (bad.Length > 0)
+            {
+                // Field KEYS are manifest metadata, never values.
+                _logger.LogWarning(
+                    "discarding the capture: {Fields} became visible or filled while it was being taken",
+                    string.Join(", ", bad.Distinct(StringComparer.Ordinal)));
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Hands the page back as it was found. Never takes the caller's token:
+    /// a cancelled capture must still leave a usable login form behind.
+    /// </summary>
+    private async Task RevealAsync(IPage page)
+    {
+        foreach (var frame in page.Frames)
+        {
+            try
+            {
+                await frame.EvaluateAsync(RevealScript).ConfigureAwait(false);
+            }
+            catch (PlaywrightException ex)
+            {
+                _logger.LogDebug(ex, "frame {Url} could not be restored after a capture", Describe(frame));
+            }
         }
     }
 
