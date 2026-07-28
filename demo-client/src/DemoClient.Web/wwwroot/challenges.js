@@ -1,5 +1,5 @@
 /**
- * The seven ways a provider can stop and ask the human something.
+ * The eight ways a provider can stop and ask the human something.
  *
  * A challenge is relayed, never solved. That line - we hand the question to
  * the person who owns the account and hand their answer back - is what
@@ -14,6 +14,13 @@
  * the picture comes out, the human touches it in their own app, and the
  * normalised points go back. Nothing here solves anything.
  *
+ * The eighth is `live_view` and it is the odd one: not a question with an
+ * answer but the provider's own page, streamed, with the human's pointer and
+ * keyboard on it. It rides this machinery anyway because everything the
+ * machinery provides - an expiry, a renderer chosen by the consumer, a visible
+ * degradation when the consumer has never heard of the type - is exactly what
+ * it needs too. `live-view.js` holds it.
+ *
  * Every challenge carries `expires_at`, and every renderer here counts down
  * to it and disables itself on the way past. A challenge holds a live
  * browser open on an agent; a form still accepting input for a question that
@@ -21,16 +28,24 @@
  */
 
 import { h, badge, note, spinner, countdown, sayKey, sayTerm, errorBlock, mount } from './render.js';
+import { liveViewChallenge } from './live-view.js';
 
 /**
  * @param challenge  the ChallengeView off the wire
  * @param onAnswer   (value) => Promise, posts to .../answer
  * @param loadImage  () => Promise<objectUrl>, the authenticated PNG
+ * @param live       { frame(after, signal), input(events) } for a live_view
  */
-export function renderChallenge(challenge, { onAnswer, loadImage } = {}) {
+export function renderChallenge(challenge, { onAnswer, loadImage, live } = {}) {
   const controls = [];
   const status = h('div', { class: 'challenge-status' });
   let objectUrl = null;
+
+  // A renderer that owns something the caller cannot see - a poll loop, a
+  // listener on the visual viewport - hands back the way to stop it. Kept as a
+  // list rather than a single slot so this stays true of the next renderer
+  // that needs it.
+  const disposers = [];
 
   const clock = countdown(challenge.expires_at, {
     prefix: 'expires in ',
@@ -56,7 +71,9 @@ export function renderChallenge(challenge, { onAnswer, loadImage } = {}) {
     controls,
     submit,
     loadImage,
+    live,
     onUrl: (url) => { objectUrl = url; },
+    onDispose: (stop) => disposers.push(stop),
     // Read rather than tracked separately: the countdown already owns whether
     // this question is still live, and a second flag would be the one that
     // goes stale.
@@ -91,6 +108,10 @@ export function renderChallenge(challenge, { onAnswer, loadImage } = {}) {
     element,
     dispose() {
       clock.dispose();
+      // Before the object URL, and unconditionally: a live view's frame loop
+      // creates one of its own every 100ms, and a loop still running after
+      // this element left the page would go on doing it into a detached node.
+      for (const stop of disposers) stop();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     },
   };
@@ -137,6 +158,11 @@ function build(challenge, ctx) {
     case 'app_approval': return approvalChallenge(challenge, ctx);
     case 'select_option': return selectChallenge(challenge, ctx);
     case 'redirect': return redirectChallenge(challenge, ctx);
+    // Reached from the type and not from `answer_kind`, because a live view's
+    // answer is the empty one every passive challenge sends. If a `live`
+    // answer kind is ever appended it falls through `isTapKind` unchanged and
+    // arrives here anyway.
+    case 'live_view': return liveViewChallenge(challenge, ctx);
     default: return unknownChallenge(challenge, ctx);
   }
 }

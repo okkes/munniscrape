@@ -124,6 +124,78 @@ export const api = {
     return URL.createObjectURL(await response.blob());
   },
 
+  /**
+   * One picture of a live view, or null when the server's own long-poll window
+   * closed with nothing newer than `after`.
+   *
+   * Raw `fetch` rather than `request`, for three reasons that all matter: the
+   * body is JPEG bytes and not JSON, the sequence to ask for next lives in a
+   * response HEADER, and this call parks for seconds at a time so it needs an
+   * abort signal the caller owns. The headers are readable because this is the
+   * app's own origin - nothing here is cross-origin, so nothing depends on a
+   * CORS expose list.
+   */
+  liveFrame: async (service, provider, sessionId, challengeId, after, signal) => {
+    // Omitted, not sent as 0, when nothing has been seen yet. The connector
+    // reads an absent `after` as "below every sequence a caller can hold" and a
+    // present one literally, so a client that opened with `after=0` would never
+    // be given a frame numbered 0 - and that failure looks like a dead stream
+    // rather than like a disagreement about counting.
+    const query = after === null || after === undefined ? '' : `?after=${encodeURIComponent(after)}`;
+    const url = `${BASE}/${service}/${provider}/login/${sessionId}/challenges/${challengeId}`
+      + `/live/frame${query}`;
+
+    let response;
+    try {
+      // no-store, because a cached frame is a picture of a page as it was, and
+      // this one is only worth anything as it is now.
+      response = await fetch(url, { signal, cache: 'no-store' });
+    } catch (cause) {
+      // An abort is the caller closing the stream on purpose, not a failure,
+      // so it travels as itself rather than as a relay error the UI would draw
+      // a red box for.
+      if (cause?.name === 'AbortError') throw cause;
+      throw new RelayError(0, { code: 'provider_unavailable', retriable: true, user_action: 'retry',
+        message_key: 'connect.error.provider_unavailable' }, String(cause));
+    }
+
+    if (response.status === 204) return null;
+
+    if (!response.ok) {
+      let payload = null;
+      try {
+        payload = JSON.parse(await response.text());
+      } catch {
+        payload = null;
+      }
+      throw new RelayError(response.status, payload?.error, 'live frame');
+    }
+
+    const [width, height] = String(response.headers.get('X-Live-Size') ?? '').split('x').map(Number);
+
+    return {
+      sequence: Number(response.headers.get('X-Live-Sequence') ?? 0),
+      // Reported for the human and for a size change nobody expected. It must
+      // never reach the coordinate maths - those are fractions of the picture
+      // as DRAWN, and dividing by the frame's own pixel size instead is how
+      // every tap lands somewhere else on a phone.
+      width: Number.isFinite(width) ? width : 0,
+      height: Number.isFinite(height) ? height : 0,
+      blob: await response.blob(),
+    };
+  },
+
+  /**
+   * What the human just did, in fractions of the picture they did it to.
+   *
+   * `{ events: [...] }` is `LiveInputBatch` verbatim - the relay passes it
+   * through unread, exactly as it passes a tap answer's string through unread,
+   * because the grammar belongs to the adapter and not to the relay.
+   */
+  liveInput: (service, provider, sessionId, challengeId, events) =>
+    request('POST', `/${service}/${provider}/login/${sessionId}/challenges/${challengeId}/live/input`,
+      { events }),
+
   /** Data, a 202 job handle, or a challenge - all three from one call. */
   fetchResource: (service, provider, resource, body) =>
     request('POST', `/${service}/${provider}/${resource}/fetch`, body),

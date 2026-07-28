@@ -831,6 +831,180 @@ button:disabled {
   color: var(--ink-muted);
 }
 
+/* --------------------------------------------------------------------------
+   9b. The provider's own page, streamed
+
+   The same geometry rule as the tap stage, and for the same reason: pointer
+   fractions are measured against `.live-image`'s own client rectangle, so the
+   stage shrink-wraps it and carries no border and no padding. A 1px border
+   here would put every press out by a pixel; a container with a different
+   aspect ratio would letterbox the picture and put them out by far more.
+
+   The width cap is the agent's own viewport, which is phone-sized on purpose
+   (390x844, one image pixel to one CSS pixel) so providers serve their mobile
+   layout. Capping at that width means the picture is never upscaled: a live
+   view blown up is blurrier than the human needs it to be while their password
+   is in it, and the fraction a press turns into is identical either way.
+   -------------------------------------------------------------------------- */
+
+.live-view {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.live-origin {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.65rem;
+  background: var(--info-soft);
+  border-radius: var(--radius-sm);
+}
+
+.live-origin-label {
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+/* The single thing a person uses to decide whether to type a password, so it
+   is the largest thing in the row rather than a footnote under the picture. */
+.live-origin-value {
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* No origin is not a cosmetic gap. A rectangle showing a login form with no
+   domain beside it is structurally what a phishing page is, so the absence is
+   painted as loudly as a wrong one would be. */
+.live-origin-value.is-unknown {
+  color: var(--bad);
+  font-weight: 700;
+}
+
+.live-stage {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: min(100%, 390px);
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  line-height: 0;
+  outline: 1px solid var(--line-strong);
+  outline-offset: 0;
+  background: var(--surface-2);
+  /* Every gesture belongs to this element. Without it a vertical swipe scrolls
+     this app's page instead of reaching the provider's, and a double tap zooms
+     the picture rather than pressing a button twice. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* Before the first frame there is no image and therefore no height, so the
+   veil would have nothing to cover. */
+.live-stage:not(.is-live) {
+  width: 100%;
+  min-height: 16rem;
+}
+
+.live-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+  /* Every press belongs to the stage, which is the box the fractions are
+     measured against - and it stops a desktop drag from picking the picture up
+     instead of pressing it. */
+  pointer-events: none;
+}
+
+/* Focusable, invisible, and out of the way of everything.
+   Not `display:none`, not `visibility:hidden`, not `hidden`: none of those can
+   hold focus, and a focused editable element is the only way to make a phone
+   raise its keyboard. `pointer-events: none` keeps it from eating the taps
+   meant for the picture, and 16px stops iOS zooming the page when it focuses.
+   `opacity` rather than a negative offset so it stays in the viewport - iOS
+   will not raise the keyboard for a field parked offscreen. */
+.live-shadow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  opacity: 0;
+  font-size: 16px;
+  pointer-events: none;
+  caret-color: transparent;
+}
+
+.live-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  text-align: center;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.live-stage.is-live .live-veil {
+  display: none;
+}
+
+/* A stopped stream is veiled again, because a frozen last frame is
+   indistinguishable from a live one that nobody is typing into. */
+.live-stage.is-live.is-stopped .live-veil {
+  display: flex;
+}
+
+.live-veil-text {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* The local echo. Deliberately near the picture and deliberately quiet: it
+   acknowledges that a keystroke was taken, and it must never look like the
+   character itself has appeared. */
+.live-echo {
+  margin: 0;
+  min-height: 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.live-problem:empty {
+  display: none;
+}
+
+.note-warn {
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* No bank runs a visible clock while you type a password, and a login stream
+   lives for minutes rather than the seconds a captcha does. So the countdown
+   is suppressed until it is worth knowing about - `is-urgent` is the last 30
+   seconds - which warns once near the end instead of pressuring throughout.
+   `visibility` and not `display`, so the header does not jump when it appears. */
+.challenge-live_view .challenge-head .countdown:not(.is-urgent):not(.is-expired) {
+  visibility: hidden;
+}
+
 /* A QR has to be scannable from a phone held in front of the screen. */
 .challenge-qr img {
   width: min(280px, 80vw);

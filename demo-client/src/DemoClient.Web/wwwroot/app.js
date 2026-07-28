@@ -645,6 +645,14 @@ function updateLogin(streamNote) {
       live.login.challengeUi = renderChallenge(challenge, {
         onAnswer: (value) => api.answerLogin(run.service.key, run.manifest.id, run.sessionId, challenge.id, value),
         loadImage: () => api.challengeImage(run.service.key, run.manifest.id, run.sessionId, challenge.id),
+        // Derived from ids this tab already holds, exactly as the image URL is.
+        // A live view adds no hostname and no path to any payload.
+        live: {
+          frame: (after, signal) =>
+            api.liveFrame(run.service.key, run.manifest.id, run.sessionId, challenge.id, after, signal),
+          input: (events) =>
+            api.liveInput(run.service.key, run.manifest.id, run.sessionId, challenge.id, events),
+        },
       });
       live.login.challenge.append(live.login.challengeUi.element);
     }
@@ -1008,6 +1016,13 @@ function paintJobChallenge(row, view) {
     // A mid-fetch challenge's image lives under its session, exactly as a
     // login challenge does - one route, both cases.
     loadImage: () => api.challengeImage(row.service, row.provider, sessionId, challenge.id),
+    // And so does its live view. A re-login in the middle of a fetch is the
+    // case this exists for.
+    live: {
+      frame: (after, signal) =>
+        api.liveFrame(row.service, row.provider, sessionId, challenge.id, after, signal),
+      input: (events) => api.liveInput(row.service, row.provider, sessionId, challenge.id, events),
+    },
   });
   live.data.challenge.append(live.data.challengeUi.element);
 }

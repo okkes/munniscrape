@@ -511,6 +511,224 @@ the rectangle the taps were normalised against.
 
 ---
 
+## The provider's own page, streamed
+
+Some providers cannot be signed into with a form at all, and for the ones that
+can, the form is where the password enters the platform. A `live_view`
+challenge replaces it: the provider's own login page renders in the agent's
+Chromium, is photographed several times a second, and is streamed to the phone
+of the person who owns the account. They type their username, password and any
+SMS code straight into it.
+
+**The credential stops entering the platform.** A provider served this way
+declares no auth fields, so nothing is collected by a form of ours, nothing is
+written to `JobRow.InputsJson`, and nothing is handed to an agent as
+`LeasedJob.Inputs`. It is not encrypted better; it is not there. Read
+[`docs/streamed-login-design.md`](../docs/streamed-login-design.md) for the
+custody argument in full, including the three ways it is a win and the one way
+it is a regression.
+
+`wwwroot/live-view.js` is the reference rendering. This section is written so
+the same thing can be built on iOS or Android without reading any of it.
+
+> **State of it, so nobody demos a promise.** The contract (`ChallengeType.LiveView`,
+> `LiveInput`, `LiveInputBatch`, `LiveFrame`) and this renderer are in.
+> **This demo's relay does not yet proxy the two live routes**, so the renderer
+> draws its error block rather than a picture until it does — which is the
+> correct behaviour and is not the same thing as working. No adapter raises a
+> `live_view` challenge yet either.
+
+### The two routes, and nothing else
+
+A live view is an ordinary challenge that arrives in the ordinary place — over
+SSE (`GET …/login/{session}/events`, `event: state`) or from a poll of
+`GET …/login/{session}` — as `state: "awaiting_input"` with `type: "live_view"`.
+It adds **two** endpoints, both derived from ids the app already holds, exactly
+as the still relay's `image` route is. No payload gains a hostname.
+
+```
+GET  /api/{service}/{provider}/login/{session}/challenges/{challenge}/live/frame?after=<seq>
+→ 200 image/jpeg  +  X-Live-Sequence: <long>  +  X-Live-Size: <width>x<height>
+→ 204            nothing newer arrived before the poll window closed
+```
+
+It is a **long poll**, not a timer. Ask again the instant it answers, whichever
+answer it gave, passing the sequence you were last given as `after`. **Omit
+`after` entirely on the first request** — absent means "I have seen nothing",
+and it is not the same as `after=0`.
+
+```
+POST /api/{service}/{provider}/login/{session}/challenges/{challenge}/live/input
+{ "events": [ { "kind": "down", "x": 0.5, "y": 0.42, "sequence": 7 }, … ] }
+→ 202 accepted    → 400 the batch is not answerable, and none of it was applied
+```
+
+Accepted is not applied. Whether the page did anything with it is the next
+frame's business.
+
+### The grammar
+
+`kind` is one of six and there are no others:
+
+| `kind` | Carries | Means |
+| --- | --- | --- |
+| `move` | `x`, `y` | the pointer moved — hovers and drags |
+| `down` / `up` | `x`, `y` | the primary button. **There is no secondary button** |
+| `scroll` | `x`, `y`, `delta_y` | travel, in fractions of the view |
+| `text` | `text` | printable characters, typed wherever the page has focus |
+| `key` | `key` | one of `backspace delete enter tab escape arrow_up arrow_down arrow_left arrow_right home end` |
+
+Every event carries a `sequence`: your own counter, so the far end can drop a
+duplicate and order what arrives out of order. A phone connection will do both.
+
+**What is missing is the point.** Nothing in this grammar carries a URL, a
+selector, a script or a file path, so navigation, evaluation and upload are not
+rejected — they are unsayable. There are **no modifiers**: no Ctrl, no Alt, no
+Meta, on keys or on clicks. Playwright reads `"Control+o"` as a chord and a
+latched modifier turns the next click into "open in a new tab", so a chord must
+be **refused whole** rather than relayed as its base key — sending plain `enter`
+for Ctrl+Enter is a different keystroke than the human made.
+
+Two bounds the server enforces, which you must enforce first:
+
+- **`text` is at most 256 characters and may contain no control character**
+  (C0 and C1: `U+0000`–`U+001F`, `U+007F`–`U+009F`). One bad character makes the
+  server refuse the **whole batch**, so the human loses everything they typed
+  with it. Split a long paste; split *around* the newlines rather than turning
+  them into `enter`, because Enter submits a form and a trailing newline on the
+  clipboard is not consent to submit. Do not cut a chunk through a surrogate
+  pair — half an emoji is not a character any page can receive.
+- **At most 64 events per batch.** Batch rather than sending one request per
+  event: a drag is thirty moves.
+
+### The same coordinate rule as the taps, for the same reason
+
+**Fractions of the picture as drawn, never pixels**, measured against the frame
+the image is *drawn* in:
+
+```
+x = (touch.x - imageFrame.minX) / imageFrame.width
+y = (touch.y - imageFrame.minY) / imageFrame.height
+```
+
+`X-Live-Size` tells you what the agent captured. **Never divide by it.** The
+whole of [The one thing that goes wrong silently](#the-one-thing-that-goes-wrong-silently)
+above applies here word for word, and it is worse here: a mis-normalised tap on
+a captcha grid picks the wrong tile, while a mis-normalised tap on a login page
+puts the human's password into whichever box the agent's pointer happened to
+land in.
+
+Clamp to `0…1` before sending. A coordinate outside the range makes the server
+refuse the batch, and the only events that can land outside are the tail of a
+drag that started inside.
+
+### The keyboard, which is the whole feature
+
+A phone raises its keyboard in response to **a focused editable element**, and
+there is no API that asks for one directly. So:
+
+1. Put a real, focusable, invisible input over the picture. Not `display:none`,
+   not `visibility:hidden`, not `hidden` — none of those can hold focus. In this
+   client it is a 1px `opacity:0` field; keep it inside the viewport, because
+   iOS will not raise the keyboard for a field parked offscreen, and give it a
+   16px font so iOS does not zoom the page when it focuses.
+2. On pointer-down over the picture, **`preventDefault()` and then `focus()`**.
+   Both halves matter and they fight each other: without `preventDefault` the
+   browser's own focus handling moves focus to the body and closes the keyboard
+   the human just raised, and `focus()` must happen inside a user gesture or iOS
+   ignores it. Offer a visible "Show keyboard" button as well — a press on a
+   real button is the one gesture every mobile browser accepts a `focus()` from.
+3. **Never read the field's value.** Read the delta from `beforeinput`
+   (`event.data`, and `inputType` for `deleteContentBackward` and friends),
+   handle `paste` yourself from the clipboard, and **empty the field on every
+   `input` event, without exception** — including for an inputType you did not
+   recognise. The field being empty matters more than the keystroke being
+   delivered. That is the entire defence against the client accumulating what
+   the server refuses to store.
+4. Ignore `beforeinput` while a composition is running and send the committed
+   string once on `compositionend`. Android gesture typing and every IME emit a
+   run of partial `insertCompositionText` events on the way there; relaying them
+   types the word several times over.
+5. Read `keydown` *as well*. A physical keyboard reports the key there; a soft
+   one reports `Unidentified` and speaks only through `beforeinput`. Reading
+   both, and letting whichever fires first win, is why Backspace works on a
+   laptop and on a phone.
+
+**Password managers are a real loss here and it must not be glossed.** Today's
+generated form is manager-friendly by manifest declaration — `Autofill =
+"username"` / `"current-password"` become `autocomplete` attributes and the
+picker fills the entry in one tap. The shadow field must be `autocomplete=off`
+(it exists to be emptied, not to hold a value) and associating it with the
+provider's domain would require the app to know the provider's domain, which is
+exactly the provider knowledge the architecture keeps out of a client. What is
+left is manual copy and paste, which this client carries as one `text` event. A
+user whose 20-character generated password lives in a manager and who has never
+typed it must now type it. For some people that is not degraded, it is
+impossible.
+
+### Local echo: there is none, deliberately
+
+A round trip is 200ms and more, and typing where the characters appear a fifth
+of a second late is unpleasant. The obvious fix — draw the character yourself —
+needs two things the client does not have: **the caret's rectangle**, which no
+field on this wire carries, and the provider's own font and masking. Guessing
+either paints a character somewhere the password is not going, and the human
+then corrects text that was never there. That is a worse failure than a delay.
+
+So what this client echoes is **custody of the keystroke, not its appearance**:
+the moment a key is pressed it becomes a dot in a strip under the picture, and
+the dots clear when a frame taken after the delivery arrives. The human learns
+instantly that the press was taken, and sees the real thing in the real page a
+couple of hundred milliseconds later. The count is a **counter**, never an
+accumulated string — there is nothing in the client to read a password out of.
+
+If the agent ever ships the focused element's rect, this becomes a real caret
+and real keyboard avoidance. Until then, the client can only scroll the whole
+picture into the visual viewport when the keyboard rises, which is a mitigation
+and not a fix.
+
+### What the UI owes the person
+
+They are about to type their real grocery password into what looks like a video
+of a website. The copy is part of the product, not decoration around it.
+
+- **Show the origin, large.** A rectangle showing a login form with no domain
+  beside it is structurally what a phishing page is, and the domain is the
+  single thing a person uses to decide whether to type a password. A **missing**
+  origin must be painted as loudly as a wrong one.
+- **Say where the password goes** — into the provider's page, never stored here,
+  never written to a database.
+- **Say what we cannot prove.** The agent supplies both the frame and the name
+  beside it, so the connector cannot attest what the picture shows. There is no
+  address bar and no padlock. Say so. A user who reads that and stops is a user
+  this worked for.
+- **Give them a way out.** A live view is passive — it ends when the provider
+  lets the login through — so the only exit from a stream that will not work is
+  otherwise to wait out the expiry.
+- **Do not run a visible clock.** No bank runs a timer while you type a
+  password. This client suppresses the countdown until the last 30 seconds,
+  which warns once near the end instead of pressuring throughout.
+- **Revoke every object URL you replace.** A blob URL keeps its bytes alive for
+  the life of the document and the collector may not touch them. At a frame
+  every 100ms an unrevoked stream leaks about a megabyte a second.
+- **Stop polling when the tab is hidden.** That is the client half of viewer
+  liveness: a backgrounded tab that keeps polling leaves Chromium photographing
+  an authenticated browser with nobody watching.
+- **A live picture cannot be read by a screen reader**, so a provider that signs
+  in this way cannot yet be connected without sight. That is a real gap and it
+  belongs on screen, not in a footnote.
+
+### Degrading, if you ignore all of this
+
+Unchanged from the taps: `challenges.js` checks `answer_kind` before the type
+switch and an unknown *type* falls through to `unknownChallenge`, which explains
+itself, dumps the JSON and offers a text box. The connector refuses whatever is
+typed and the adapter reports a challenge nobody answered. **`ChallengeType.LiveView`
+must never be the only way a provider can be connected**, or a defect in the
+frame pipeline becomes a total provider outage.
+
+---
+
 ## What munni must implement
 
 The relay in `src/DemoClient.Web/Relay/` is small on purpose. These five
@@ -539,6 +757,16 @@ every one of them:
   connector caps the bundle's TTL at an hour, and the tab keeps it in
   `sessionStorage` only. A returning user is `needs_signin` — normal, not
   broken — which is a different state from `needs_reauth`.
+- **Passing the live legs through untouched, and unbuffered.** The two
+  `…/live/…` routes are a long poll and a POST, so a relay that buffers a
+  response until it is "complete" turns a stream into a freeze, and one that
+  re-encodes or resizes the JPEG changes the rectangle every coordinate was
+  normalised against. `X-Live-Sequence` and `X-Live-Size` must survive the hop;
+  without the sequence the client cannot ask for the next frame at all. And
+  these are the two routes that must be **excluded from request-body logging by
+  construction**, not by discipline: the bodies are a photograph of a login page
+  and the keystrokes going into it, and no scrubber can find a password in a
+  JPEG.
 
 Everything else is pass-through: the relay does not interpret manifests,
 normalise data, retry, or rewrite an error envelope. Those live in the

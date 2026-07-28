@@ -55,6 +55,38 @@ const KEYS = {
     'Solve the captcha in the browser window we opened for you. There is nothing to type here - once the provider lets us through, this page moves on by itself.',
   'connect.challenge.sms_code': 'Enter the code we just texted you.',
 
+  // ── the streamed login ───────────────────────────────────────────────
+  //
+  // This copy is part of the product, not decoration around it. The person
+  // reading it is about to type their real grocery password into what looks
+  // like a video of a website, and what they decide to do rests on these four
+  // strings. Shipping the feature with any of them unwritten puts a raw copy
+  // key above a live password box, which is exactly the visible defect
+  // `key()` below is designed to produce - so they are written here ahead of
+  // the adapter that will send the first one.
+  'connect.challenge.live_login':
+    'This is the provider\'s own sign-in page, running in a browser we opened for you and '
+    + 'photographed several times a second. Tap it and type into it the way you would on your own phone.',
+  // The custody claim, and the whole reason this exists. It is a strong claim
+  // and it is true: a provider served this way declares no credential fields,
+  // so there is no form, no job input and nothing at rest.
+  'connect.live.custody':
+    'What you type is replayed straight into that page and goes to the provider. It is never '
+    + 'stored here, never written to our database, and never travels as a password - only as '
+    + 'keystrokes, into a browser that forgets them.',
+  // The disclosure, which is not optional. We cannot attest what the picture
+  // shows: the agent supplies both the frame and the name beside it. Saying so
+  // is the only honest thing available, and a user who reads it and stops is a
+  // user the design worked for.
+  'connect.live.no_attestation':
+    'Be as careful here as you would be anywhere else. This is a photograph of a page on a '
+    + 'machine you cannot see, so there is no address bar and no padlock to check, and we cannot '
+    + 'prove to you what it shows. Only the name above says whose page it is. If that is not the '
+    + 'provider you meant to sign in to, stop.',
+  'connect.live.keyboard':
+    'Tap a box in the picture to bring your keyboard up, then type. Keyboard shortcuts are not '
+    + 'carried - there is deliberately no way to say Ctrl or Alt over this connection.',
+
   'connect.ah.notes': 'We sign you in to Albert Heijn with these details, then keep the connection alive on our own. After this you will not need to sign in again.',
   // Kept for older bundles and manifests: AH used to ask the human to paste
   // the appie:// address its sign-in ended on. It does not any more, and an
@@ -180,6 +212,10 @@ const VOCAB = {
     app_approval: 'Approve it in the app',
     select_option: 'Pick one',
     redirect: 'Sign in on the provider\'s site',
+    // Not "watch a stream". The human is signing in; the streaming is how, not
+    // what, and a heading that leads with the mechanism invites them to read
+    // the page as a video rather than as their own sign-in.
+    live_view: 'Sign in on the provider\'s own page',
   },
   service_kind: { bank: 'Banking', store: 'Shopping' },
   account_type: {
