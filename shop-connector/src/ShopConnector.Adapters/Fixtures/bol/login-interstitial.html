@@ -1,0 +1,24 @@
+<!--
+  SYNTHETIC, but its one load-bearing detail is CONFIRMED: bol's login form
+  posts j_username and j_password, the Spring Security field names, read off
+  the public page at login.bol.com/wsp/login on 2026-07-28.
+
+  This is what a fetch gets back when the stored cookie has died - a 200
+  carrying the login form instead of the account page. It must be reported as
+  session_expired, which asks the platform for a new login job, and never as a
+  parse failure, which would page an operator about a session that simply ran
+  out.
+-->
+<!DOCTYPE html>
+<html lang="nl">
+<head><meta charset="utf-8"><title>Inloggen</title></head>
+<body>
+  <div id="__next">
+    <form method="POST">
+      <input type="email" name="j_username" autocomplete="username">
+      <input type="password" name="j_password" autocomplete="current-password">
+      <button type="submit">Inloggen</button>
+    </form>
+  </div>
+</body>
+</html>

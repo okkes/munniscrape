@@ -1,0 +1,147 @@
+{
+  "id": 4821,
+  "status": "processing",
+  "items": [
+    {
+      "key": "wc_order_9Ka1Lm4QpZ",
+      "id": 91,
+      "quantity": 2,
+      "name": "Badhanddoek 50x100 antraciet",
+      "sku": "WB-HAND-5010",
+      "permalink": "https://shop.example.nl/product/badhanddoek/",
+      "prices": {
+        "price": "649",
+        "regular_price": "649",
+        "sale_price": "649",
+        "currency_code": "EUR",
+        "currency_symbol": "€",
+        "currency_minor_unit": 2,
+        "currency_decimal_separator": ",",
+        "currency_thousand_separator": ".",
+        "currency_prefix": "€ ",
+        "currency_suffix": ""
+      },
+      "totals": {
+        "line_subtotal": "1198",
+        "line_subtotal_tax": "252",
+        "line_total": "1078",
+        "line_total_tax": "226",
+        "currency_code": "EUR",
+        "currency_symbol": "€",
+        "currency_minor_unit": 2,
+        "currency_decimal_separator": ",",
+        "currency_thousand_separator": ".",
+        "currency_prefix": "€ ",
+        "currency_suffix": ""
+      }
+    },
+    {
+      "key": "wc_order_9Ka1Lm4QpZ",
+      "id": 92,
+      "quantity": 1,
+      "name": "Wasknijpers 50 stuks",
+      "sku": "WB-KNIJP-50",
+      "permalink": "https://shop.example.nl/product/wasknijpers/",
+      "prices": {
+        "price": "349",
+        "regular_price": "399",
+        "sale_price": "349",
+        "currency_code": "EUR",
+        "currency_symbol": "€",
+        "currency_minor_unit": 2,
+        "currency_decimal_separator": ",",
+        "currency_thousand_separator": ".",
+        "currency_prefix": "€ ",
+        "currency_suffix": ""
+      },
+      "totals": {
+        "line_subtotal": "349",
+        "line_subtotal_tax": "73",
+        "line_total": "349",
+        "line_total_tax": "73",
+        "currency_code": "EUR",
+        "currency_symbol": "€",
+        "currency_minor_unit": 2,
+        "currency_decimal_separator": ",",
+        "currency_thousand_separator": ".",
+        "currency_prefix": "€ ",
+        "currency_suffix": ""
+      }
+    }
+  ],
+  "coupons": [
+    {
+      "code": "welkom10",
+      "discount_type": "percent",
+      "totals": {
+        "total_discount": "120",
+        "total_discount_tax": "26",
+        "currency_code": "EUR",
+        "currency_minor_unit": 2
+      }
+    }
+  ],
+  "fees": [
+    {
+      "key": 331,
+      "name": "Betaalkosten iDEAL",
+      "totals": {
+        "total": "35",
+        "total_tax": "7",
+        "currency_code": "EUR",
+        "currency_minor_unit": 2
+      }
+    }
+  ],
+  "totals": {
+    "subtotal": "1547",
+    "total_discount": "120",
+    "total_shipping": "395",
+    "total_fees": "35",
+    "total_tax": "382",
+    "total_refund": "0",
+    "total_price": "2246",
+    "total_items": "1427",
+    "total_items_tax": "299",
+    "total_fees_tax": "7",
+    "total_discount_tax": "26",
+    "total_shipping_tax": "83",
+    "tax_lines": [
+      { "name": "BTW 21%", "price": "382", "rate": "21" }
+    ],
+    "currency_code": "EUR",
+    "currency_symbol": "€",
+    "currency_minor_unit": 2,
+    "currency_decimal_separator": ",",
+    "currency_thousand_separator": ".",
+    "currency_prefix": "€ ",
+    "currency_suffix": ""
+  },
+  "shipping_address": {
+    "first_name": "Sanne",
+    "last_name": "de Vries",
+    "address_1": "Kerkstraat 12",
+    "address_2": "",
+    "city": "Utrecht",
+    "state": "",
+    "postcode": "3581 RA",
+    "country": "NL",
+    "phone": ""
+  },
+  "billing_address": {
+    "first_name": "Sanne",
+    "last_name": "de Vries",
+    "address_1": "Kerkstraat 12",
+    "address_2": "",
+    "city": "Utrecht",
+    "state": "",
+    "postcode": "3581 RA",
+    "country": "NL",
+    "email": "shopper@example.nl",
+    "phone": ""
+  },
+  "needs_payment": false,
+  "needs_shipping": true,
+  "payment_requirements": ["products"],
+  "errors": []
+}

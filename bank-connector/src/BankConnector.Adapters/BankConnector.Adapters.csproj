@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The bank product's provider fleet.
+
+    Two halves. The mock providers let the whole platform - control plane,
+    agent protocol, challenge relay, SSE, BYO routing - be exercised end to
+    end with zero network and zero real accounts. The parsers are the part
+    every real Dutch bank adapter will share, because banks hand over a
+    downloaded export rather than JSON, and an export can be tested offline
+    against a fixture long before anyone has a live session.
+  -->
+  <PropertyGroup>
+    <RootNamespace>BankConnector.Adapters</RootNamespace>
+    <AssemblyName>BankConnector.Adapters</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../connector-kit/src/Connector.Kit/Connector.Kit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Fixtures are embedded, not copied. A parser test that depends on the
+      working directory a runner happens to pick fails in CI and passes
+      locally, which is the worst possible failure mode for the suite whose
+      entire job is to catch a provider's shape moving.
+    -->
+    <EmbeddedResource Include="Parsing/Fixtures/*.xml" />
+    <EmbeddedResource Include="Parsing/Fixtures/*.csv" />
+  </ItemGroup>
+
+</Project>

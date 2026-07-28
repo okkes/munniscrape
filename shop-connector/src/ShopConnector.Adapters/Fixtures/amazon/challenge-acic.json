@@ -1,0 +1,26 @@
+{
+  "url": "https://www.amazon.nl/ax/aaut/verify/ap/challenge",
+  "status": 200,
+  "html": [
+    "<!doctype html>",
+    "<html lang=\"nl-nl\">",
+    "<head><meta charset=\"utf-8\"><title>Authenticatie vereist</title></head>",
+    "<body>",
+    "<div id=\"a-page\">",
+    "  <div class=\"a-section a-text-center\">",
+    "    <h1>Even controleren</h1>",
+    "    <p>Los de puzzel op om door te gaan naar je account.</p>",
+    "  </div>",
+    "  <div id=\"aa-challenge-page-captcha-container\" class=\"a-section\">",
+    "    <div id=\"amzn-captcha-verify-button-holder\"></div>",
+    "    <p class=\"a-size-base\">Kies alle afbeeldingen met emmers.</p>",
+    "  </div>",
+    "  <form method=\"post\" action=\"/ax/aaut/verify/ap/challenge\">",
+    "    <input type=\"hidden\" name=\"metadata1\" value=\"ECdITeCs:redacted\">",
+    "    <input type=\"submit\" value=\"Doorgaan\">",
+    "  </form>",
+    "</div>",
+    "</body>",
+    "</html>"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "_comment": [
+    "SYNTHETIC. An account with no orders in this page: the envelope resolves and the",
+    "array is empty, which is a perfectly good answer and must not be reported as a",
+    "shape change. The distinction matters - one is a clean empty sync, the other pages",
+    "an operator."
+  ],
+  "orders": [],
+  "pagination": { "page": 1, "totalPages": 0, "totalResults": 0 }
+}

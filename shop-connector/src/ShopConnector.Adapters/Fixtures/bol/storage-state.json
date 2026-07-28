@@ -1,0 +1,64 @@
+{
+  "_comment": [
+    "SYNTHETIC. A Playwright storage state as it would look after a bol login.",
+    "The cookie NAMES are confirmed - login.bol.com sets JSESSIONID and XSC, both",
+    "Secure and HttpOnly - and their HOSTS are the point of this fixture: JSESSIONID",
+    "is scoped to login.bol.com and would not travel to www.bol.com, exactly as a",
+    "browser would refuse to send it. Anything the fetch needs has to be scoped to",
+    "www.bol.com or to a dotted .bol.com, and BolCookies is written to agree.",
+    "The values are obviously fake and no real session is stored anywhere."
+  ],
+  "cookies": [
+    {
+      "name": "JSESSIONID",
+      "value": "0000FIXTUREJSESSIONID0000",
+      "domain": "login.bol.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "XSC",
+      "value": "fixture-xsc-value",
+      "domain": ".bol.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "shopping_session_id",
+      "value": "fixture-shopping-session",
+      "domain": "www.bol.com",
+      "path": "/",
+      "expires": 4102444800,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "expired_marker",
+      "value": "should-never-be-sent",
+      "domain": ".bol.com",
+      "path": "/",
+      "expires": 1000000000,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "affiliate",
+      "value": "not-a-bol-cookie",
+      "domain": ".example.test",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

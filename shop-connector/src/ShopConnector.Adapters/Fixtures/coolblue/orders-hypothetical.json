@@ -1,0 +1,72 @@
+{
+  "_fixture_note": "SYNTHETIC. This is NOT a recorded capture - no Coolblue order response has ever been observed by anyone outside Coolblue. It is written to the shape CoolblueOptions guesses at, so the parser, the declared money units, the offsets, the discounts and the reconciliation verdict are all exercised offline. When a real capture lands, REPLACE this file with it and expect the tests to move.",
+  "data": {
+    "orders": [
+      {
+        "orderNumber": "20260719-4711",
+        "orderDate": "2026-07-19T17:42:00+02:00",
+        "totalAmount": 1148.90,
+        "payments": [
+          {
+            "method": "creditcard",
+            "maskedCardNumber": "XXXX XXXX XXXX 4242"
+          }
+        ],
+        "orderLines": [
+          {
+            "name": "Apple MacBook Air 13 inch M4 16GB/256GB",
+            "quantity": 1,
+            "unitPrice": 1149.00,
+            "totalPrice": 1149.00,
+            "discounts": [
+              {
+                "name": "Actiekorting",
+                "amount": 50.00
+              }
+            ]
+          },
+          {
+            "name": "Coolblue USB-C hub 7-in-1",
+            "quantity": 2,
+            "unitPrice": 24.95,
+            "totalPrice": 49.90
+          }
+        ]
+      },
+      {
+        "orderNumber": "20260703-4655",
+        "orderDate": "2026-07-03T09:15:00",
+        "totalAmount": 109.95,
+        "storeName": "Coolblue Rotterdam Beurs",
+        "paymentMethod": "iDEAL",
+        "orderLines": [
+          {
+            "name": "Philips Hue White and Color E27 3-pack",
+            "quantity": 1,
+            "unitPrice": 119.95,
+            "totalPrice": 119.95
+          }
+        ],
+        "discounts": [
+          {
+            "name": "Kortingscode ZOMER10",
+            "amount": 10.00
+          }
+        ]
+      },
+      {
+        "orderNumber": "20260228-4501",
+        "orderDate": "2026-02-28",
+        "totalAmount": 279.00,
+        "orderLines": [
+          {
+            "name": "Sonos Era 100",
+            "quantity": 1,
+            "unitPrice": 249.00,
+            "totalPrice": 249.00
+          }
+        ]
+      }
+    ]
+  }
+}

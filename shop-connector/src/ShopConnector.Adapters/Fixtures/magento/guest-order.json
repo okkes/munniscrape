@@ -1,0 +1,53 @@
+{
+  "data": {
+    "guestOrder": {
+      "number": "000000412",
+      "order_date": "07/09/2026 21:05:00",
+      "status": "Complete",
+      "email": "shopper@example.com",
+      "shipping_method": "PostNL - Brievenbuspakket",
+      "payment_methods": [
+        {
+          "name": "iDEAL",
+          "type": "mollie_methods_ideal"
+        }
+      ],
+      "total": {
+        "grand_total": { "value": 42.02, "currency": "EUR" },
+        "subtotal_incl_tax": { "value": 41.15, "currency": "EUR" },
+        "subtotal_excl_tax": { "value": 34.01, "currency": "EUR" },
+        "total_tax": { "value": 8, "currency": "EUR" },
+        "total_shipping": { "value": 4.13, "currency": "EUR" },
+        "shipping_handling": {
+          "amount_including_tax": { "value": 4.99, "currency": "EUR" }
+        },
+        "discounts": [
+          {
+            "amount": { "value": 4.12, "currency": "EUR" },
+            "label": "Zomeractie 10%"
+          }
+        ]
+      },
+      "items": [
+        {
+          "product_name": "Theedoek gestreept",
+          "product_sku": "TD-STR-01",
+          "quantity_ordered": 2,
+          "product_sale_price": { "value": 7.95, "currency": "EUR" }
+        },
+        {
+          "product_name": "Keramieken mok",
+          "product_sku": "MOK-KER-04",
+          "quantity_ordered": 1,
+          "product_sale_price": { "value": 12.5, "currency": "EUR" }
+        },
+        {
+          "product_name": "Bijenwaskaars",
+          "product_sku": "KRS-BW-12",
+          "quantity_ordered": 3,
+          "product_sale_price": { "value": 4.25, "currency": "EUR" }
+        }
+      ]
+    }
+  }
+}

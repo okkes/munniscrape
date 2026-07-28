@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The control plane, as a library. Both products' APIs are thin shells
+    over this: register providers, call MapConnectorApi(). Everything a
+    control plane does - catalogue, sessions, jobs, challenges, agents -
+    lives here exactly once.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Connector.Kit.Hosting</RootNamespace>
+    <AssemblyName>Connector.Kit.Hosting</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <!--
+      Production auth is JWT bearer; the shared framework does not carry the
+      handler. Development mode never touches this assembly.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      EF Core's Sqlite provider pulls SQLitePCLRaw 2.1.11, which carries a
+      known high-severity advisory (GHSA-2m69-gcr7-jv3q) and therefore fails a
+      TreatWarningsAsErrors build outright. Overridden to the patched build
+      rather than suppressed: this native library parses untrusted file
+      content, so the advisory is real even in a test-only code path.
+      Belongs in Directory.Packages.props once that file can be edited.
+    -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" VersionOverride="2.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Connector.Kit\Connector.Kit.csproj" />
+  </ItemGroup>
+
+</Project>

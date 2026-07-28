@@ -1,0 +1,22 @@
+{
+  "data": {
+    "posReceiptsPage": {
+      "posReceipts": [
+        {
+          "id": "ah-2026-07-19-4711",
+          "dateTime": "2026-07-19T17:42:00+02:00",
+          "totalAmount": {
+            "amount": 6.36
+          }
+        },
+        {
+          "id": "ah-2026-07-12-4655",
+          "dateTime": "2026-07-12T09:15:00",
+          "totalAmount": {
+            "amount": 23.14
+          }
+        }
+      ]
+    }
+  }
+}

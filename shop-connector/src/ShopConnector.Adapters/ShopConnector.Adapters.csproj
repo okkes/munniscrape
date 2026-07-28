@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The shopping providers. Nothing here knows about HTTP routing, the
+    database, or the job queue - an adapter sees only IJobContext.
+  -->
+  <PropertyGroup>
+    <RootNamespace>ShopConnector.Adapters</RootNamespace>
+    <AssemblyName>ShopConnector.Adapters</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\connector-kit\src\Connector.Kit\Connector.Kit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Parsers are internal because they are not a contract - only the
+      adapters and the fixture catalogue are. The offline suite still needs
+      to reach them: a parse test that has to build an HTTP stub to check a
+      discount sign is a test nobody writes.
+    -->
+    <InternalsVisibleTo Include="ShopConnector.Adapters.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Fixtures ship both ways on purpose: embedded so a parse test needs no
+      file paths and cannot drift from the assembly it tests, and copied so
+      an operator diffing a live capture against the recorded shape can just
+      open the file.
+    -->
+    <None Remove="Fixtures\**\*.json" />
+    <EmbeddedResource Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      bol.com's recorded pages. Scoped to Fixtures\bol\ rather than
+      Fixtures\**\ deliberately: a provider whose payload is HTML is the
+      exception here, and a wildcard would collide with the next one instead
+      of sitting beside it.
+
+      HTML rather than JSON-wrapped HTML because the whole value of a fixture
+      is that an operator can diff a live capture against it. bol's consumer
+      order list has never been seen by anyone on this project - it needs an
+      account - so these files are SYNTHETIC and say so in their own first
+      lines. Replacing them with a real capture is the first thing a live run
+      should produce.
+    -->
+    <None Remove="Fixtures\bol\*.html" />
+    <EmbeddedResource Include="Fixtures\bol\*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

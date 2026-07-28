@@ -1,0 +1,17 @@
+{
+  "url": "https://www.amazon.nl/your-orders/orders?timeFilter=year-2026&startIndex=0",
+  "status": 403,
+  "html": [
+    "<!doctype html>",
+    "<html lang=\"en\">",
+    "<head><meta charset=\"utf-8\"><title>Amazon.nl</title></head>",
+    "<body>",
+    "<div class=\"a-container\">",
+    "  <h4>Sorry, we just need to make sure you're not a robot.</h4>",
+    "  <p>To discuss automated access to Amazon data please contact api-services-support@amazon.com.</p>",
+    "  <p>For information about migrating to our APIs refer to our Marketplace APIs.</p>",
+    "</div>",
+    "</body>",
+    "</html>"
+  ]
+}

@@ -1,0 +1,7 @@
+# Real provider credentials, typed once so a developer does not retype them
+# twenty times. Read only by the Development-only /api/prefill endpoint.
+#
+# Matched by prefix rather than by exact filename: the extension changed from
+# .json to .jsonc once already, and an ignore rule naming one extension is a
+# rule that silently stops protecting anything the next time it changes.
+credentials.local.*

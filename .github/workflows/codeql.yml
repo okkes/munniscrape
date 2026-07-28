@@ -1,0 +1,54 @@
+name: CodeQL
+
+# C# only: there is no other language in this repository. The workflows and
+# the infra JSON are covered by iac.yml's own validation.
+on:
+  push:
+    branches: [main, master, dev]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  pull_request:
+    branches: [main, master, dev]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  schedule:
+    # Weekly, so a query-pack update finds an old finding without waiting
+    # for someone to push.
+    - cron: '30 5 * * 2'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          # Manual rather than autobuild: there is no solution file, and
+          # autobuild's guess at which of several projects to build is not
+          # something a security scan should be guessing at.
+          build-mode: manual
+          # security-extended over the default pack. Code quality is the
+          # compiler's job here - TreatWarningsAsErrors is on repo-wide.
+          queries: security-extended
+
+      - name: Build
+        run: |
+          while IFS= read -r proj; do
+            dotnet build "$proj" -c Release
+          done <<< "$(git ls-files '*.csproj' | sort)"
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:csharp'

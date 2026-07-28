@@ -1,0 +1,225 @@
+# Production stack: both control planes, their databases, and the
+# http-tier agents. Intended for the Synology NAS that already runs munni.
+#
+#   docker compose --env-file deploy/env/.env.prod -f deploy/docker-compose.yml up -d
+#
+# The browser-tier agents are in the `residential` profile and belong on a
+# different machine entirely - see the comment above them.
+#
+# Nothing here is reachable from the internet:
+#   * the control planes publish only on ${LAN_BIND_IP};
+#   * they terminate TLS themselves and pin the consumer's client
+#     certificate, because a LAN is not a trust boundary;
+#   * the database is on an internal network with no published port;
+#   * the agents publish nothing at all - every call they make is
+#     outbound.
+#
+# Every ${VAR:?...} below fails the `up` rather than starting a service
+# that is quietly misconfigured.
+name: connectors
+
+x-api-common: &api-common
+  restart: unless-stopped
+  environment: &api-env
+    ASPNETCORE_ENVIRONMENT: Production
+    # ASPNETCORE_URLS is deliberately unset: it would override the Kestrel
+    # endpoints below, collapsing the TLS listener into plain HTTP.
+    #
+    # Health is a separate plaintext listener that is never published. It
+    # exists for the container healthcheck and for an operator inside the
+    # network; the spec makes /v1/health unauthenticated, so it must not
+    # share the listener that carries everything else.
+    Kestrel__Endpoints__Health__Url: http://+:8080
+    Kestrel__Endpoints__Public__Url: https://+:8443
+    Kestrel__Endpoints__Public__Certificate__Path: /tls/server.crt.pem
+    Kestrel__Endpoints__Public__Certificate__KeyPath: /tls/server.key.pem
+    # AllowCertificate, not RequireCertificate: /v1/* demands a pinned
+    # consumer certificate, but /agent/v1/* is a different identity class
+    # authenticated by a per-agent token, and an agent on a user's own
+    # machine has no client certificate to present.
+    Kestrel__Endpoints__Public__ClientCertificateMode: AllowCertificate
+    Db__AutoMigrate: "true"
+    Auth__Mode: production
+    Auth__Authority: ${AUTH_AUTHORITY:?set AUTH_AUTHORITY (the Logto OIDC issuer)}
+    Auth__Mtls__CaPath: /tls/ca.crt.pem
+    Auth__Mtls__AllowedFingerprints__0: ${CONSUMER_CLIENT_CERT_FINGERPRINT:?set CONSUMER_CLIENT_CERT_FINGERPRINT}
+    BUILD_NUMBER: ${TAG:-latest}
+  volumes:
+    # Server cert, its key, and the internal CA that signs the consumer's
+    # client cert. Files rather than environment variables: env shows up in
+    # `docker inspect` and in every crash dump.
+    - ./env/tls:/tls:ro
+  healthcheck:
+    test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/v1/health || exit 1"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 40s
+
+x-agent-common: &agent-common
+  restart: unless-stopped
+  # No ports, no volumes-from, no database credential, no healthcheck: an
+  # agent listens on nothing and its liveness is the heartbeat the control
+  # plane already tracks (GET /v1/agents).
+  environment: &agent-env
+    DOTNET_ENVIRONMENT: Production
+    Agent__MaxConcurrency: "1"
+    Agent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: postgres
+      # initdb/01-create-databases.sql reads these and creates one database
+      # and one role per service, with cross-connect revoked.
+      BANK_DB_PASSWORD: ${BANK_DB_PASSWORD:?set BANK_DB_PASSWORD}
+      SHOP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?set SHOP_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    # No published port. `docker compose exec postgres psql` is one command
+    # and costs the LAN nothing. There is also no backup service here: a
+    # connector stages data for at most seven days and owns no durable user
+    # record, so a nightly dump would back up secrets and nothing else.
+    networks: [data]
+
+  bank-api:
+    <<: *api-common
+    image: ${REGISTRY:-ghcr.io/okkes}/bank-connector-api:${TAG:-latest}
+    environment:
+      <<: *api-env
+      Service__Kind: bank
+      ConnectionStrings__Db: Host=postgres;Database=bank_connector;Username=bank_connector;Password=${BANK_DB_PASSWORD:?set BANK_DB_PASSWORD}
+      Auth__Audience: ${BANK_M2M_AUDIENCE:?set BANK_M2M_AUDIENCE}
+      Auth__RequiredScope: connector.bank
+      # Rotation is a kid bump: mint BUNDLE_SEAL_KEY_K2, point
+      # BUNDLE_CURRENT_KID at it, and leave K1 in the ring until every
+      # bundle sealed under it has passed its TTL. No mass re-login.
+      # An empty key entry is ignored by the host.
+      Bundle__CurrentKid: ${BUNDLE_CURRENT_KID:?set BUNDLE_CURRENT_KID}
+      Bundle__Keys__k1: ${BANK_BUNDLE_SEAL_KEY_K1:?set BANK_BUNDLE_SEAL_KEY_K1}
+      Bundle__Keys__k2: ${BANK_BUNDLE_SEAL_KEY_K2:-}
+      Agents__EnrollmentHmacKey: ${BANK_AGENT_ENROLLMENT_HMAC:?set BANK_AGENT_ENROLLMENT_HMAC}
+      Webhook__Url: ${BANK_WEBHOOK_URL:?set BANK_WEBHOOK_URL}
+      Webhook__SigningKey: ${BANK_WEBHOOK_SIGNING_KEY:?set BANK_WEBHOOK_SIGNING_KEY}
+      # server custody stays off until B5 turns it on deliberately; with it
+      # off the service holds no long-lived credential at all.
+      Features__Vault: ${BANK_FEATURE_VAULT:-false}
+      Vault__Kek: ${BANK_VAULT_KEK:-}
+      # Raw provider payloads are a debugging aid and a liability. Never on
+      # for a real user without an explicit, temporary decision.
+      Features__RawPayloadDebug: "false"
+    ports:
+      - "${LAN_BIND_IP:?set LAN_BIND_IP (the NAS LAN address; 0.0.0.0 is not acceptable)}:8390:8443"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data, mesh]
+
+  shop-api:
+    <<: *api-common
+    image: ${REGISTRY:-ghcr.io/okkes}/shop-connector-api:${TAG:-latest}
+    environment:
+      <<: *api-env
+      Service__Kind: store
+      ConnectionStrings__Db: Host=postgres;Database=shop_connector;Username=shop_connector;Password=${SHOP_DB_PASSWORD:?set SHOP_DB_PASSWORD}
+      Auth__Audience: ${SHOP_M2M_AUDIENCE:?set SHOP_M2M_AUDIENCE}
+      Auth__RequiredScope: connector.shop
+      Bundle__CurrentKid: ${BUNDLE_CURRENT_KID:?set BUNDLE_CURRENT_KID}
+      Bundle__Keys__k1: ${SHOP_BUNDLE_SEAL_KEY_K1:?set SHOP_BUNDLE_SEAL_KEY_K1}
+      Bundle__Keys__k2: ${SHOP_BUNDLE_SEAL_KEY_K2:-}
+      Agents__EnrollmentHmacKey: ${SHOP_AGENT_ENROLLMENT_HMAC:?set SHOP_AGENT_ENROLLMENT_HMAC}
+      Webhook__Url: ${SHOP_WEBHOOK_URL:?set SHOP_WEBHOOK_URL}
+      Webhook__SigningKey: ${SHOP_WEBHOOK_SIGNING_KEY:?set SHOP_WEBHOOK_SIGNING_KEY}
+      Features__Vault: ${SHOP_FEATURE_VAULT:-false}
+      Vault__Kek: ${SHOP_VAULT_KEK:-}
+      Features__RawPayloadDebug: "false"
+    ports:
+      - "${LAN_BIND_IP:?set LAN_BIND_IP (the NAS LAN address; 0.0.0.0 is not acceptable)}:8391:8443"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data, mesh]
+
+  # The http-tier agents. These may live on the NAS: they never start a
+  # browser, so the NAS's shared egress address is not a problem for them.
+  # Note they are on `mesh` only - never on `data`. An agent holds a
+  # plaintext credential for the length of a job, and one that cannot
+  # resolve postgres cannot be talked into reading it.
+  bank-agent-http:
+    <<: *agent-common
+    image: ${REGISTRY:-ghcr.io/okkes}/bank-connector-agent:${TAG:-latest}
+    environment:
+      <<: *agent-env
+      Agent__Name: nas-http-bank
+      Agent__Class: pooled
+      Agent__ControlPlaneUrl: ${BANK_CONTROL_PLANE_URL:-https://bank-api:8443}
+      Agent__Token: ${BANK_NAS_AGENT_TOKEN:?enrol the agent once, then set BANK_NAS_AGENT_TOKEN}
+      # The control plane's certificate comes from an internal CA, so the
+      # agent needs that CA to verify it. The CA certificate is public
+      # information; the key it was signed with never leaves the bootstrap.
+      Agent__ControlPlaneCaPath: /tls/ca.crt.pem
+      Agent__Runtimes__0: http
+      Agent__Egress__Kind: any
+    volumes:
+      - ./env/tls/ca.crt.pem:/tls/ca.crt.pem:ro
+    depends_on:
+      bank-api:
+        condition: service_healthy
+    networks: [mesh]
+
+  shop-agent-http:
+    <<: *agent-common
+    image: ${REGISTRY:-ghcr.io/okkes}/shop-connector-agent:${TAG:-latest}
+    environment:
+      <<: *agent-env
+      Agent__Name: nas-http-shop
+      Agent__Class: pooled
+      Agent__ControlPlaneUrl: ${SHOP_CONTROL_PLANE_URL:-https://shop-api:8443}
+      Agent__Token: ${SHOP_NAS_AGENT_TOKEN:?enrol the agent once, then set SHOP_NAS_AGENT_TOKEN}
+      Agent__ControlPlaneCaPath: /tls/ca.crt.pem
+      Agent__Runtimes__0: http
+      Agent__Egress__Kind: any
+    volumes:
+      - ./env/tls/ca.crt.pem:/tls/ca.crt.pem:ro
+    depends_on:
+      shop-api:
+        condition: service_healthy
+    networks: [mesh]
+
+  # ── where the browser-tier agents are NOT ────────────────────────────
+  # There is deliberately no browser agent in this file. Every
+  # browser-tier provider judges us on the address we connect from, and
+  # the NAS's egress is the same datacenter-shaped address as everything
+  # else it hosts; Jumbo tarpits exactly that. Those agents run on a mini
+  # PC or Pi on the domestic line, with their own one-service compose file
+  # on that box - see "The residential agent" in deploy/README.md.
+  #
+  # They are not a disabled profile here because compose interpolates
+  # EVERY service regardless of profile: a file whose ${VAR:?} guards can
+  # only be satisfied on one of the two hosts is a file that lies about
+  # the other.
+
+networks:
+  # Postgres and the two control planes, and nothing else ever. Internal:
+  # the database has no reason to reach the internet, and no published port
+  # can be added to it by accident.
+  data:
+    internal: true
+  # Control planes and agents. `docker network connect connectors_mesh
+  # <consumer-api-container>` is the zero-published-port path for the
+  # consumer; the LAN ports above exist for the case where it runs
+  # elsewhere on the network.
+  mesh:
+
+volumes:
+  pgdata:

@@ -1,0 +1,25 @@
+{
+  "url": "https://www.amazon.nl/ap/signin",
+  "status": 200,
+  "html": [
+    "<!doctype html>",
+    "<html lang=\"nl-nl\">",
+    "<head><meta charset=\"utf-8\"><title>Amazon.nl aanmelden</title></head>",
+    "<body>",
+    "<div id=\"a-page\">",
+    "  <form name=\"signIn\" method=\"post\" action=\"/ap/signin\">",
+    "    <div id=\"auth-captcha-image-container\" class=\"a-section\">",
+    "      <h4>Los deze puzzel op om te bewijzen dat je geen robot bent</h4>",
+    "      <img id=\"auth-captcha-image\" src=\"https://opfcaptcha-prod.s3.amazonaws.com/dd18c1fexample.jpg\" alt=\"Voer de tekens in die je hieronder ziet\">",
+    "    </div>",
+    "    <div class=\"a-row a-spacing-base\">",
+    "      <label for=\"auth-captcha-guess\">Voer de tekens in die je hierboven ziet</label>",
+    "      <input type=\"text\" id=\"auth-captcha-guess\" name=\"guess\" autocomplete=\"off\">",
+    "    </div>",
+    "    <input id=\"signInSubmit\" type=\"submit\" value=\"Aanmelden\">",
+    "  </form>",
+    "</div>",
+    "</body>",
+    "</html>"
+  ]
+}

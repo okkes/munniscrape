@@ -1,0 +1,239 @@
+name: Build & push images
+
+# Four images: two control planes and two agents.
+#
+# One NATIVE build per architecture - no QEMU, which for a .NET publish is
+# the difference between two minutes and twenty - pushed under an
+# arch-suffixed tag, then merged into the channel tag by the manifest job
+# once every arch exists. A host never sees a half-published channel tag.
+#
+# master -> :latest, dev -> :dev.
+on:
+  push:
+    branches: [main, master, dev]
+    # Source and build inputs only. A docs, deploy or infra change cannot
+    # change a byte of any image, so it does not rebuild one.
+    paths:
+      - 'connector-kit/src/**'
+      - 'bank-connector/src/**'
+      - 'shop-connector/src/**'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - '.dockerignore'
+      - '.github/workflows/release-images.yml'
+      - '.github/workflows/build-test.yml'
+  workflow_dispatch:
+
+# The NAS pulls from GHCR: the Synology registry is LAN-only and a GitHub
+# runner cannot reach it.
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Nothing is published from a tree that does not build and pass.
+  test:
+    uses: ./.github/workflows/build-test.yml
+
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      build: ${{ steps.meta.outputs.build }}
+      env_suffix: ${{ steps.meta.outputs.env_suffix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: meta
+        run: |
+          echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            echo "channel=dev" >> "$GITHUB_OUTPUT"
+            echo "env_suffix=staging" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=latest" >> "$GITHUB_OUTPUT"
+            echo "env_suffix=production" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── control planes: amd64 (NAS) + arm64 (Pi) ─────────────────────────
+  api-images:
+    needs: [test, meta]
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [bank, shop]
+        arch: [amd64, arm64]
+        include:
+          - service: bank
+            dir: bank-connector
+            project: BankConnector
+            image: bank-connector
+          - service: shop
+            dir: shop-connector
+            project: ShopConnector
+            image: shop-connector
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # The GitHub Environment is the single source of per-stack config.
+    # There are no fallbacks anywhere: a missing variable fails the guard
+    # below instead of publishing an image for a stack that cannot run it.
+    environment: ${{ matrix.service }}-${{ needs.meta.outputs.env_suffix }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Guard the environment's configuration
+        # These images take no per-stack build arguments - that is a
+        # property worth keeping - so this guard is about the stack the
+        # channel tag is about to be deployed into. Catching a missing
+        # BUNDLE_CURRENT_KID here beats catching it when the NAS pulls
+        # :latest at 03:00 and the control plane refuses to start.
+        env:
+          CONNECTOR_REGISTRY: ${{ vars.CONNECTOR_REGISTRY }}
+          BUNDLE_CURRENT_KID: ${{ vars.BUNDLE_CURRENT_KID }}
+          LAN_BIND_IP: ${{ vars.LAN_BIND_IP }}
+          AUTH_AUTHORITY: ${{ vars.AUTH_AUTHORITY }}
+          M2M_AUDIENCE: ${{ vars.M2M_AUDIENCE }}
+          WEBHOOK_URL: ${{ vars.WEBHOOK_URL }}
+        run: |
+          missing=0
+          for name in CONNECTOR_REGISTRY BUNDLE_CURRENT_KID LAN_BIND_IP \
+                      AUTH_AUTHORITY M2M_AUDIENCE WEBHOOK_URL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::variable $name is not defined in environment ${{ matrix.service }}-${{ needs.meta.outputs.env_suffix }}"
+              missing=1
+            fi
+          done
+          # A stack configured to pull from somewhere else than we push to
+          # is a stack that silently keeps running yesterday's image.
+          if [ -n "$CONNECTOR_REGISTRY" ] && [ "$CONNECTOR_REGISTRY" != "$REGISTRY" ]; then
+            echo "::error::the environment expects images at $CONNECTOR_REGISTRY but this workflow pushes to $REGISTRY"
+            missing=1
+          fi
+          if [ "$LAN_BIND_IP" = "0.0.0.0" ]; then
+            echo "::error::LAN_BIND_IP is 0.0.0.0, which publishes a connector to every interface. The stack declares lan-only exposure."
+            missing=1
+          fi
+          exit $missing
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push ${{ matrix.image }}-api (${{ matrix.arch }})
+        uses: docker/build-push-action@v7
+        with:
+          # Repo root: every service is a thin shell over connector-kit,
+          # which lives outside its own folder.
+          context: .
+          file: ${{ matrix.dir }}/src/${{ matrix.project }}.Api/Dockerfile
+          push: true
+          build-args: |
+            BUILD_NUMBER=${{ needs.meta.outputs.build }}
+          # Arch-suffixed only. The channel tags are minted by the
+          # manifest job, once every arch has landed.
+          tags: ${{ env.REGISTRY }}/${{ matrix.image }}-api:${{ needs.meta.outputs.channel }}-${{ needs.meta.outputs.build }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.image }}-api-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-api-${{ matrix.arch }}
+
+  # ── agents: amd64 only ───────────────────────────────────────────────
+  # Playwright's Chromium on arm64 is unverified, and it is a named open
+  # question in the platform design (s12.2): if the residential agent ends
+  # up being a Raspberry Pi, this needs to build for arm64 and the browser
+  # needs to actually work there. The amd64 mini-PC fallback costs about
+  # EUR 120 and removes the question entirely. Until someone verifies it,
+  # publishing an arm64 agent image would be publishing a promise we have
+  # not checked.
+  agent-images:
+    needs: [test, meta]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: bank
+            dir: bank-connector
+            project: BankConnector
+            image: bank-connector
+          - service: shop
+            dir: shop-connector
+            project: ShopConnector
+            image: shop-connector
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.service }}-${{ needs.meta.outputs.env_suffix }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push ${{ matrix.image }}-agent (amd64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dir }}/src/${{ matrix.project }}.Agent/Dockerfile
+          push: true
+          build-args: |
+            BUILD_NUMBER=${{ needs.meta.outputs.build }}
+          tags: ${{ env.REGISTRY }}/${{ matrix.image }}-agent:${{ needs.meta.outputs.channel }}-${{ needs.meta.outputs.build }}-amd64
+          cache-from: type=gha,scope=${{ matrix.image }}-agent-amd64
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-agent-amd64
+
+  # Merge the per-arch pushes into the tags hosts actually pull.
+  manifest:
+    needs: [meta, api-images, agent-images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create channel tags
+        env:
+          CHANNEL: ${{ needs.meta.outputs.channel }}
+          BUILD: ${{ needs.meta.outputs.build }}
+        run: |
+          for image in bank-connector-api shop-connector-api; do
+            docker buildx imagetools create \
+              -t "$REGISTRY/$image:$CHANNEL" \
+              -t "$REGISTRY/$image:$CHANNEL-$BUILD" \
+              "$REGISTRY/$image:$CHANNEL-$BUILD-amd64" \
+              "$REGISTRY/$image:$CHANNEL-$BUILD-arm64"
+          done
+
+          # Single-arch, deliberately. The channel tag still exists so the
+          # agent hosts pull the same way every other image is pulled.
+          for image in bank-connector-agent shop-connector-agent; do
+            docker buildx imagetools create \
+              -t "$REGISTRY/$image:$CHANNEL" \
+              -t "$REGISTRY/$image:$CHANNEL-$BUILD" \
+              "$REGISTRY/$image:$CHANNEL-$BUILD-amd64"
+          done
+
+          {
+            echo "### Published \`$CHANNEL-$BUILD\`"
+            echo ''
+            echo '| Image | Platforms |'
+            echo '| --- | --- |'
+            for image in bank-connector-api shop-connector-api bank-connector-agent shop-connector-agent; do
+              platforms=$(docker buildx imagetools inspect "$REGISTRY/$image:$CHANNEL" \
+                | grep -E '^\s+Platform:' | awk '{print $2}' | paste -sd', ')
+              echo "| \`$image\` | $platforms |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

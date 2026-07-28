@@ -1,0 +1,55 @@
+{
+  "cookies": [
+    {
+      "name": "session-id",
+      "value": "260-0000000-0000000",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "ubid-acbnl",
+      "value": "261-1111111-1111111",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "x-main",
+      "value": "REDACTED-AUTHENTICATED-MARKER",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "at-acbnl",
+      "value": "REDACTED-ACCESS-TOKEN",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "aws-waf-token",
+      "value": "REDACTED-WAF-TOKEN",
+      "domain": "www.amazon.nl",
+      "path": "/",
+      "expires": 1785715200,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

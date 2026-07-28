@@ -1,0 +1,11 @@
+{
+  "errors": [
+    {
+      "message": "Please login to view the order.",
+      "locations": [{ "line": 2, "column": 3 }],
+      "path": ["guestOrder"],
+      "extensions": { "category": "graphql-authorization" }
+    }
+  ],
+  "data": { "guestOrder": null }
+}

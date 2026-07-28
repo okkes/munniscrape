@@ -1,0 +1,11 @@
+{
+  "errors": [
+    {
+      "message": "We couldn't locate an order with the information provided.",
+      "locations": [{ "line": 2, "column": 3 }],
+      "path": ["guestOrder"],
+      "extensions": { "category": "graphql-no-such-entity" }
+    }
+  ],
+  "data": { "guestOrder": null }
+}

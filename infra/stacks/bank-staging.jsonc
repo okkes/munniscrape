@@ -1,0 +1,87 @@
+// bank-staging — the Bank Connector, staging.
+//
+// Only the differences from bank-prod are commented; everything else is
+// deliberately identical, because a staging stack that differs in shape
+// proves nothing about production.
+{
+  "stack": "bank-staging",
+  "service": "bank",
+  "role": "staging",
+
+  // dev branch -> :dev images.
+  "channel": "dev",
+  "githubEnvironment": "bank-staging",
+
+  "domain": "${CONNECTOR_DOMAIN}",
+  "hosts": { "api": "ledgerbridge-staging" },
+  "ports": { "api": 8392 },
+
+  "registry": "ghcr.io/okkes",
+  "images": {
+    "api": "bank-connector-api",
+    "agent": "bank-connector-agent"
+  },
+
+  "network": {
+    "exposure": "lan-only",
+    "bindAddress": "${LAN_BIND_IP}",
+    "allowFrom": ["munni-api-staging"],
+    "reverseProxy": false
+  },
+
+  "database": {
+    // Own instance, shared with shop-staging. Staging never touches the
+    // production instance, not even as a separate database on it: an
+    // accidental cross-connection is a production incident with a staging
+    // cause.
+    "instance": "staging",
+    "name": "bank_connector",
+    "role": "bank_connector",
+    "published": false
+  },
+
+  "bundle": {
+    "currentKid": "k1",
+    "webTtlSecondsCap": 3600
+  },
+
+  "agents": {
+    "pooled": [
+      {
+        "name": "nas-http",
+        "host": "nas",
+        "runtimes": ["http"],
+        "egress": { "country": "NL", "kind": "any" },
+        "replicas": 1
+      }
+      // No residential browser agent. Staging runs mock providers, which
+      // need no browser and no plausible address; a second agent competing
+      // for the same domestic line would only make production's timing
+      // less predictable.
+    ],
+    // BYO enrollment stays on: it is the protocol under test, and testing
+    // it against mock-bank-persistent is the point.
+    "byoEnrollment": true
+  },
+
+  "retention": {
+    "stagedDataDays": 7,
+    // Longer than production: in staging the artifacts exist to be read.
+    "failureArtifactHours": 168,
+    "rawPayloadHours": 72
+  },
+
+  "features": {
+    "telemetry": true,
+    // Allowed here and nowhere else. There are no real users' payloads in
+    // this stack to leak.
+    "rawPayloadDebug": true,
+    "vault": false,
+    // ING, ASN and ICS are off until a dedicated canary account exists for
+    // them (slice B6). Pointing staging at a real bank with a real
+    // person's credentials is how staging locks someone's account.
+    "mockProvidersOnly": true,
+    "canaries": false,
+    "webhooks": true
+  }
+}

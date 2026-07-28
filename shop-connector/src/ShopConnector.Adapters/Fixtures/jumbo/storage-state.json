@@ -1,0 +1,35 @@
+{
+  "cookies": [
+    {
+      "name": "JMB_SESSION",
+      "value": "jumbo-session-cookie-fixture",
+      "domain": ".jumbo.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "jmb-consent",
+      "value": "all",
+      "domain": "www.jumbo.com",
+      "path": "/",
+      "expires": 4102444800,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "unrelated",
+      "value": "should-not-be-sent",
+      "domain": ".example.org",
+      "path": "/",
+      "expires": 4102444800,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

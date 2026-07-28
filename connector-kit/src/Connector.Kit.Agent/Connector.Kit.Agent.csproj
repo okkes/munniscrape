@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The data plane, as a library. This is the only assembly that carries a
+    browser dependency and the only one that ever holds a plaintext
+    credential. Both products' agents are thin shells over it.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Connector.Kit.Agent</RootNamespace>
+    <AssemblyName>Connector.Kit.Agent</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- JobBudget is an implementation detail of the runner, and the rule it
+         enforces - parked time is not spent time - is only worth anything if a
+         test can drive it directly. -->
+    <InternalsVisibleTo Include="Connector.Kit.Agent.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Playwright" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Connector.Kit\Connector.Kit.csproj" />
+  </ItemGroup>
+
+</Project>

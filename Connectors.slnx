@@ -1,0 +1,35 @@
+<Solution>
+  <Folder Name="/bank-connector/" />
+  <Folder Name="/bank-connector/src/">
+    <Project Path="bank-connector/src/BankConnector.Adapters/BankConnector.Adapters.csproj" />
+    <Project Path="bank-connector/src/BankConnector.Agent/BankConnector.Agent.csproj" />
+    <Project Path="bank-connector/src/BankConnector.Api/BankConnector.Api.csproj" />
+  </Folder>
+  <Folder Name="/bank-connector/tests/">
+    <Project Path="bank-connector/tests/BankConnector.Adapters.Tests/BankConnector.Adapters.Tests.csproj" />
+  </Folder>
+  <Folder Name="/connector-kit/" />
+  <Folder Name="/connector-kit/src/">
+    <Project Path="connector-kit/src/Connector.Kit.Agent/Connector.Kit.Agent.csproj" />
+    <Project Path="connector-kit/src/Connector.Kit.Hosting/Connector.Kit.Hosting.csproj" />
+    <Project Path="connector-kit/src/Connector.Kit/Connector.Kit.csproj" />
+  </Folder>
+  <Folder Name="/connector-kit/tests/">
+    <Project Path="connector-kit/tests/Connector.Kit.Agent.Tests/Connector.Kit.Agent.Tests.csproj" />
+    <Project Path="connector-kit/tests/Connector.Kit.Tests/Connector.Kit.Tests.csproj" />
+  </Folder>
+  <Folder Name="/demo-client/" />
+  <Folder Name="/demo-client/src/">
+    <Project Path="demo-client/src/DemoClient.Web/DemoClient.Web.csproj" />
+  </Folder>
+  <Folder Name="/shop-connector/" />
+  <Folder Name="/shop-connector/src/">
+    <Project Path="shop-connector/src/ShopConnector.Adapters/ShopConnector.Adapters.csproj" />
+    <Project Path="shop-connector/src/ShopConnector.Agent/ShopConnector.Agent.csproj" />
+    <Project Path="shop-connector/src/ShopConnector.Api/ShopConnector.Api.csproj" />
+  </Folder>
+  <Folder Name="/shop-connector/tests/">
+    <Project Path="shop-connector/tests/ShopConnector.Adapters.Tests/ShopConnector.Adapters.Tests.csproj" />
+    <Project Path="shop-connector/tests/ShopConnector.Api.Tests/ShopConnector.Api.Tests.csproj" />
+  </Folder>
+</Solution>

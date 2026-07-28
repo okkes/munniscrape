@@ -1,0 +1,116 @@
+[
+  {
+    "delivery_id": "dlv-7788-aaa",
+    "creation_time": "2026-07-17T20:14:07.412+02:00",
+    "slot": {
+      "slot_id": "68a1c0105e91961aea7ed87c",
+      "hub_id": "DVT",
+      "fc_id": "FCA",
+      "window_start": "2026-07-18T18:15:00.000+02:00",
+      "window_end": "2026-07-18T19:15:00.000+02:00",
+      "cut_off_time": "2026-07-17T23:00:00.000+02:00",
+      "is_available": false,
+      "selected": false,
+      "reserved": false,
+      "minimum_order_value": 4000,
+      "unavailability_reason": "CLOSED"
+    },
+    "eta2": {
+      "start": "2026-07-18T18:37:00.000+02:00",
+      "end": "2026-07-18T18:57:00.000+02:00"
+    },
+    "status": "COMPLETED",
+    "delivery_time": {
+      "start": "2026-07-18T19:48:21.005+02:00",
+      "end": "2026-07-18T19:53:38.217+02:00"
+    },
+    "orders": [
+      {
+        "type": "ORDER",
+        "id": "001-201-7788",
+        "creation_time": "2026-07-17T20:14:07.412+02:00",
+        "total_price": 1469,
+        "status": "COMPLETED",
+        "cancellation_time": null
+      }
+    ]
+  },
+  {
+    "delivery_id": "dlv-1145-bbb",
+    "creation_time": "2026-07-10T21:03:11.008+02:00",
+    "slot": {
+      "slot_id": "68952d7133fe3a437f0eaef3",
+      "hub_id": "DVT",
+      "fc_id": "FCA",
+      "window_start": "2026-07-11T10:45:00.000+02:00",
+      "window_end": "2026-07-11T12:30:00.000+02:00",
+      "cut_off_time": "2026-07-11T04:00:00.000+02:00",
+      "is_available": false,
+      "selected": false,
+      "reserved": false,
+      "minimum_order_value": 4000,
+      "unavailability_reason": "CLOSED"
+    },
+    "eta2": {
+      "start": "2026-07-11T11:04:00.000+02:00",
+      "end": "2026-07-11T11:24:00.000+02:00"
+    },
+    "status": "COMPLETED",
+    "delivery_time": {
+      "start": "2026-07-11T11:27:17.942+02:00",
+      "end": "2026-07-11T11:30:53.437+02:00"
+    },
+    "orders": [
+      {
+        "type": "ORDER",
+        "id": "002-330-1145",
+        "creation_time": "2026-07-10T21:03:11.008+02:00",
+        "total_price": 6290,
+        "status": "COMPLETED",
+        "cancellation_time": null
+      },
+      {
+        "type": "ORDER",
+        "id": "002-330-9902",
+        "creation_time": "2026-07-11T00:18:55.857+02:00",
+        "total_price": 2455,
+        "status": "COMPLETED",
+        "cancellation_time": null
+      }
+    ]
+  },
+  {
+    "delivery_id": "dlv-5560-ccc",
+    "creation_time": "2026-06-01T09:12:00.000+02:00",
+    "slot": {
+      "slot_id": "683f6d892463c8138fddfe95",
+      "hub_id": "DVT",
+      "fc_id": "FCA",
+      "window_start": "2026-06-02T18:15:00.000+02:00",
+      "window_end": "2026-06-02T19:15:00.000+02:00",
+      "cut_off_time": "2026-06-01T23:00:00.000+02:00",
+      "is_available": false,
+      "selected": false,
+      "reserved": false
+    },
+    "eta2": {
+      "start": "2026-06-02T18:37:00.000+02:00",
+      "end": "2026-06-02T18:57:00.000+02:00"
+    },
+    "status": "COMPLETED",
+    "delivery_time": {
+      "start": "2026-06-02T18:44:10.005+02:00",
+      "end": "2026-06-02T18:49:02.217+02:00"
+    },
+    "orders": [
+      {
+        "type": "ORDER",
+        "id": "003-410-5560",
+        "creation_time": "2026-06-01T09:12:00.000+02:00",
+        "total_price": 7709,
+        "status": "COMPLETED",
+        "cancellation_time": null
+      }
+    ]
+  }
+]

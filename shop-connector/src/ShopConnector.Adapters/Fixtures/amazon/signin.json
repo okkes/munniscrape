@@ -1,0 +1,29 @@
+{
+  "url": "https://www.amazon.nl/ap/signin?openid.return_to=https%3A%2F%2Fwww.amazon.nl%2Fyour-orders%2Forders",
+  "status": 200,
+  "html": [
+    "<!doctype html>",
+    "<html lang=\"nl-nl\" class=\"a-no-js\">",
+    "<head><meta charset=\"utf-8\"><title>Amazon.nl aanmelden</title></head>",
+    "<body>",
+    "<div id=\"a-page\">",
+    "  <div id=\"authportal-main-section\">",
+    "    <form name=\"signIn\" method=\"post\" novalidate action=\"https://www.amazon.nl/ap/signin\">",
+    "      <input type=\"hidden\" name=\"appActionToken\" value=\"redacted\">",
+    "      <input type=\"hidden\" name=\"openid.return_to\" value=\"https://www.amazon.nl/your-orders/orders\">",
+    "      <div class=\"a-row a-spacing-base\">",
+    "        <label for=\"ap_email\">E-mailadres of mobiel telefoonnummer</label>",
+    "        <input type=\"email\" maxlength=\"128\" id=\"ap_email\" name=\"email\" tabindex=\"1\" class=\"a-input-text\">",
+    "      </div>",
+    "      <div id=\"continue\" class=\"a-button a-button-span12 a-button-primary\">",
+    "        <span class=\"a-button-inner\">",
+    "          <input id=\"continue\" tabindex=\"2\" class=\"a-button-input\" type=\"submit\" value=\"Doorgaan\">",
+    "        </span>",
+    "      </div>",
+    "    </form>",
+    "  </div>",
+    "</div>",
+    "</body>",
+    "</html>"
+  ]
+}

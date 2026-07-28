@@ -1,0 +1,21 @@
+<!--
+  SYNTHETIC, and deliberately describes something bol does NOT do today.
+
+  Response headers confirmed on 2026-07-28 that bol runs no Akamai Bot
+  Manager, no DataDome and no Cloudflare - the Akamai hostnames in its CSP are
+  mPulse RUM, which is performance telemetry. This fixture is the defence
+  against that changing: a 200 that is really a wall must be
+  blocked_by_provider, because the one thing it can never be is a wrong
+  password. Telling a user to reset a password that was fine sends them
+  somewhere useless and leaves the real block undiagnosed.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Attention Required! | Cloudflare</title></head>
+<body>
+  <div class="cf-browser-verification cf-im-under-attack">
+    <h1>Please wait...</h1>
+    <p>Checking your browser before accessing www.bol.com.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,79 @@
+// shop-staging — the Shopping Connector, staging.
+//
+// Only the differences from shop-prod are commented; everything else is
+// deliberately identical, because a staging stack that differs in shape
+// proves nothing about production.
+{
+  "stack": "shop-staging",
+  "service": "shop",
+  "role": "staging",
+
+  "channel": "dev",
+  "githubEnvironment": "shop-staging",
+
+  "domain": "${CONNECTOR_DOMAIN}",
+  "hosts": { "api": "basketbridge-staging" },
+  "ports": { "api": 8393 },
+
+  "registry": "ghcr.io/okkes",
+  "images": {
+    "api": "shop-connector-api",
+    "agent": "shop-connector-agent"
+  },
+
+  "network": {
+    "exposure": "lan-only",
+    "bindAddress": "${LAN_BIND_IP}",
+    "allowFrom": ["munni-api-staging"],
+    "reverseProxy": false
+  },
+
+  "database": {
+    // Own instance, shared with bank-staging. Staging never touches the
+    // production instance, not even as a separate database on it.
+    "instance": "staging",
+    "name": "shop_connector",
+    "role": "shop_connector",
+    "published": false
+  },
+
+  "bundle": {
+    "currentKid": "k1",
+    "webTtlSecondsCap": 3600
+  },
+
+  "agents": {
+    "pooled": [
+      {
+        "name": "nas-http",
+        "host": "nas",
+        "runtimes": ["http"],
+        "egress": { "country": "NL", "kind": "any" },
+        "replicas": 1
+      }
+      // No residential browser agent, for the same reason as
+      // bank-staging: the mock providers need no browser, and a second
+      // agent on the domestic line only adds noise to production's timing.
+    ],
+    "byoEnrollment": true
+  },
+
+  "retention": {
+    "stagedDataDays": 7,
+    "failureArtifactHours": 168,
+    "rawPayloadHours": 72
+  },
+
+  "features": {
+    "telemetry": true,
+    "rawPayloadDebug": true,
+    "vault": false,
+    // Albert Heijn, Lidl and Jumbo are off until each has a dedicated test
+    // account (slice S6). A staging run against a real retail account is a
+    // real login attempt from a real address, and a block earned in
+    // staging is a block in production too.
+    "mockProvidersOnly": true,
+    "canaries": false,
+    "webhooks": true
+  }
+}

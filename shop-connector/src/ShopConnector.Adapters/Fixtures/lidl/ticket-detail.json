@@ -1,0 +1,56 @@
+{
+  "id": "lidl-2026-07-18-8801",
+  "date": "2026-07-18T18:04:00",
+  "totalAmount": "14,27",
+  "storeName": "Lidl Utrecht Kanaleneiland",
+  "currency": {
+    "code": "EUR",
+    "symbol": "€"
+  },
+  "itemsLine": [
+    {
+      "name": "Bio volle melk 1L",
+      "quantity": "2",
+      "currentUnitPrice": "1,29",
+      "extendedAmount": "2,58",
+      "isWeight": false,
+      "discounts": []
+    },
+    {
+      "name": "Kipfilet 500g",
+      "quantity": "1",
+      "currentUnitPrice": "5,49",
+      "extendedAmount": "5,49",
+      "isWeight": false,
+      "discounts": [
+        {
+          "description": "Lidl Plus korting",
+          "amount": "0,50"
+        }
+      ]
+    },
+    {
+      "name": "Roggebrood",
+      "quantity": "1",
+      "currentUnitPrice": "1,19",
+      "extendedAmount": "1,19",
+      "isWeight": false,
+      "discounts": []
+    },
+    {
+      "name": "Espresso bonen 1kg",
+      "quantity": "1",
+      "currentUnitPrice": "5,51",
+      "extendedAmount": "5,51",
+      "isWeight": false,
+      "discounts": []
+    }
+  ],
+  "payments": [
+    {
+      "type": "MAESTRO",
+      "cardNumber": "XXXXXXXXXXXX4821",
+      "amount": "14,27"
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+{
+  "data": {
+    "order": {
+      "orderId": 90211,
+      "customerId": "cust-4471",
+      "deliveryDate": "2026-07-20",
+      "fulfilmentType": "HOME_DELIVERY",
+      "paymentMethod": "IDEAL",
+      "items": [
+        {
+          "lineId": 1,
+          "sku": "108234",
+          "quantity": 2,
+          "orderedQuantity": 2,
+          "pickedQuantity": 2,
+          "unit": "PIECE",
+          "linePriceExDiscount": { "amount": "2.58", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "2.58", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "1.29", "currency": "EUR" }, "unit": "PIECE" },
+          "promotions": [],
+          "deposits": [
+            {
+              "sku": "STG-015",
+              "quantity": 2,
+              "unitPrice": { "amount": "0.15", "currency": "EUR" },
+              "description": "Statiegeld fles"
+            }
+          ],
+          "surcharges": [],
+          "details": { "id": "p-108234", "sku": "108234", "title": "Jumbo Halfvolle Melk 1L" }
+        },
+        {
+          "lineId": 2,
+          "sku": "112901",
+          "quantity": 1,
+          "orderedQuantity": 1,
+          "pickedQuantity": 1,
+          "unit": "PIECE",
+          "linePriceExDiscount": { "amount": "1.89", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "1.89", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "1.89", "currency": "EUR" }, "unit": "PIECE" },
+          "promotions": [],
+          "deposits": [],
+          "surcharges": [],
+          "details": { "id": "p-112901", "sku": "112901", "title": "Jumbo Bananen 1kg" }
+        },
+        {
+          "lineId": 3,
+          "sku": "130445",
+          "quantity": 1,
+          "orderedQuantity": 1,
+          "pickedQuantity": 1,
+          "unit": "PIECE",
+          "linePriceExDiscount": { "amount": "7.99", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "6.99", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "7.99", "currency": "EUR" }, "unit": "PIECE" },
+          "promotions": [
+            {
+              "id": "PROMO-8812",
+              "discount": { "amount": "1.00", "currency": "EUR" },
+              "type": "SECOND_HALF_PRICE",
+              "scope": "LINE",
+              "description": "2e halve prijs"
+            }
+          ],
+          "deposits": [],
+          "surcharges": [],
+          "details": { "id": "p-130445", "sku": "130445", "title": "Jumbo Kipfilet 500g" }
+        },
+        {
+          "lineId": 4,
+          "sku": "140012",
+          "quantity": 1,
+          "orderedQuantity": 1,
+          "pickedQuantity": 1,
+          "unit": "PIECE",
+          "linePriceExDiscount": { "amount": "2.19", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "2.19", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "2.19", "currency": "EUR" }, "unit": "PIECE" },
+          "promotions": [],
+          "deposits": [],
+          "surcharges": [],
+          "details": { "id": "p-140012", "sku": "140012", "title": "Jumbo Volkorenbrood heel" }
+        },
+        {
+          "lineId": 5,
+          "sku": "150778",
+          "quantity": 1,
+          "orderedQuantity": 1,
+          "pickedQuantity": 1,
+          "unit": "PIECE",
+          "linePriceExDiscount": { "amount": "8.19", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "8.19", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "8.19", "currency": "EUR" }, "unit": "PIECE" },
+          "promotions": [],
+          "deposits": [],
+          "surcharges": [],
+          "details": { "id": "p-150778", "sku": "150778", "title": "Douwe Egberts Aroma Rood 500g" }
+        },
+        {
+          "lineId": 6,
+          "sku": "160221",
+          "quantity": 1,
+          "orderedQuantity": 1,
+          "pickedQuantity": 1,
+          "unit": "PIECE",
+          "linePriceExDiscount": { "amount": "2.99", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "2.99", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "2.99", "currency": "EUR" }, "unit": "PIECE" },
+          "promotions": [],
+          "deposits": [],
+          "surcharges": [],
+          "details": { "id": "p-160221", "sku": "160221", "title": "Jumbo Roomboter 250g" }
+        },
+        {
+          "lineId": 7,
+          "sku": "170998",
+          "quantity": 1,
+          "orderedQuantity": 1,
+          "pickedQuantity": 1,
+          "unit": "PIECE",
+          "linePriceExDiscount": { "amount": "5.00", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "5.00", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "5.00", "currency": "EUR" }, "unit": "PIECE" },
+          "promotions": [],
+          "deposits": [],
+          "surcharges": [
+            {
+              "type": "SMALL_ORDER_FEE",
+              "value": { "amount": "1.00", "currency": "EUR" }
+            }
+          ],
+          "details": { "id": "p-170998", "sku": "170998", "title": "Jumbo Scharreleieren 10 stuks" }
+        }
+      ],
+      "totals": {
+        "totalToPay": { "amount": "31.13", "currency": "EUR" },
+        "totalTax": { "amount": "1.72", "currency": "EUR" },
+        "itemSubtotal": { "amount": "30.83", "currency": "EUR" },
+        "itemDiscounts": { "amount": "1.00", "currency": "EUR" },
+        "orderDiscounts": { "amount": "0.00", "currency": "EUR" }
+      }
+    }
+  }
+}

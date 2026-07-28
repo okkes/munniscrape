@@ -1,0 +1,349 @@
+name: IaC
+
+# The stack files in infra/stacks/ are the whole description of a
+# deployment, so they get the same treatment as code: validated on every
+# change, verified against the environment they claim to configure, and
+# applied only by a deliberate manual dispatch.
+#
+# Verification never writes anything. Applying is idempotent.
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: 'Stack to apply'
+        required: true
+        type: choice
+        options: [bank-prod, bank-staging, shop-prod, shop-staging]
+      verify_only:
+        description: 'Only verify (no writes)'
+        type: boolean
+        default: false
+  push:
+    branches: [main, master, dev]
+    paths:
+      - 'infra/**'
+      - 'deploy/**'
+      - '.github/workflows/iac.yml'
+  pull_request:
+    paths:
+      - 'infra/**'
+      - 'deploy/**'
+      - '.github/workflows/iac.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # Everything checkable without touching an environment. Runs on every
+  # trigger, including pull requests from forks.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Validate stack files and the secrets manifest
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const problems = [];
+          const fail = (m) => problems.push(m);
+
+          // JSONC by hand rather than a dependency: the whole point of
+          // these files is that they carry the reasoning next to the
+          // value, and one string-aware pass is cheaper than a package.
+          function stripComments(src) {
+            let out = '', inString = false, escaped = false;
+            for (let i = 0; i < src.length; i++) {
+              const c = src[i], n = src[i + 1];
+              if (inString) {
+                out += c;
+                if (escaped) escaped = false;
+                else if (c === '\\') escaped = true;
+                else if (c === '"') inString = false;
+                continue;
+              }
+              if (c === '"') { inString = true; out += c; continue; }
+              if (c === '/' && n === '/') { while (i < src.length && src[i] !== '\n') i++; out += '\n'; continue; }
+              if (c === '/' && n === '*') {
+                i += 2;
+                while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
+                i++;
+                continue;
+              }
+              out += c;
+            }
+            return out;
+          }
+
+          const dir = 'infra/stacks';
+          const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonc')).sort();
+          if (files.length === 0) fail('infra/stacks contains no stack files');
+
+          const seenPort = new Map();
+          const seenHost = new Map();
+          const instances = new Map();
+          const legalPooledRuntimes = new Set(['http', 'browser_once', 'browser_interactive']);
+
+          for (const file of files) {
+            const id = path.basename(file, '.jsonc');
+            let stack;
+            try {
+              stack = JSON.parse(stripComments(fs.readFileSync(path.join(dir, file), 'utf8')));
+            } catch (e) {
+              fail(`${file}: does not parse - ${e.message}`);
+              continue;
+            }
+
+            const need = (cond, msg) => { if (!cond) fail(`${file}: ${msg}`); };
+
+            need(stack.stack === id, `"stack" is "${stack.stack}" but the file is named ${file}`);
+            need(['bank', 'shop'].includes(stack.service), `"service" must be bank or shop`);
+            need(['prod', 'staging'].includes(stack.role), `"role" must be prod or staging`);
+
+            const expectedChannel = stack.role === 'prod' ? 'latest' : 'dev';
+            need(stack.channel === expectedChannel, `role ${stack.role} must use channel ${expectedChannel}`);
+
+            // The workflow maps a stack to a GitHub Environment by name.
+            // If the file disagrees with that mapping, verification would
+            // check the wrong environment and pass for the wrong reason.
+            const expectedEnv = `${stack.service}-${stack.role === 'prod' ? 'production' : 'staging'}`;
+            need(stack.githubEnvironment === expectedEnv, `githubEnvironment must be "${expectedEnv}"`);
+
+            need(typeof stack.registry === 'string' && stack.registry.length > 0, 'registry is required');
+            need(stack.images?.api && stack.images?.agent, 'images.api and images.agent are required');
+
+            const port = stack.ports?.api;
+            need(Number.isInteger(port), 'ports.api must be an integer');
+            if (Number.isInteger(port)) {
+              if (seenPort.has(port)) fail(`${file}: port ${port} collides with ${seenPort.get(port)}`);
+              seenPort.set(port, file);
+            }
+
+            const host = stack.hosts?.api;
+            need(typeof host === 'string' && host.length > 0, 'hosts.api is required');
+            if (host) {
+              if (seenHost.has(host)) fail(`${file}: host "${host}" collides with ${seenHost.get(host)}`);
+              seenHost.set(host, file);
+              // The quarantine argument dies the moment a connector's
+              // hostname advertises both the parent app and the technique.
+              if (/munni|scrape|connector/i.test(host)) {
+                fail(`${file}: hosts.api "${host}" names the parent app or the technique`);
+              }
+            }
+
+            need(stack.network?.exposure === 'lan-only', 'network.exposure must be lan-only');
+            need(Array.isArray(stack.network?.allowFrom) && stack.network.allowFrom.length > 0,
+              'network.allowFrom must name who may reach this stack');
+
+            need(!!stack.database?.name && !!stack.database?.role, 'database.name and database.role are required');
+            need(stack.database?.published === false, 'database.published must be false - a database port on a LAN buys nothing');
+            if (stack.database?.instance) {
+              const key = `${stack.database.instance}/${stack.database.name}`;
+              if (instances.has(key)) fail(`${file}: database ${key} is already claimed by ${instances.get(key)}`);
+              instances.set(key, file);
+            }
+
+            // Staging must never share an instance with production: an
+            // accidental cross-connection is a production incident with a
+            // staging cause.
+            if (stack.role === 'staging' && stack.database?.instance === 'shared') {
+              fail(`${file}: staging must not use the production database instance`);
+            }
+
+            for (const agent of stack.agents?.pooled ?? []) {
+              for (const runtime of agent.runtimes ?? []) {
+                if (runtime === 'browser_persistent') {
+                  fail(`${file}: pooled agent "${agent.name}" declares browser_persistent, which is BYO-only - a permanently logged-in profile belongs on hardware the user owns`);
+                } else if (!legalPooledRuntimes.has(runtime)) {
+                  fail(`${file}: pooled agent "${agent.name}" declares unknown runtime "${runtime}"`);
+                }
+              }
+              const browser = (agent.runtimes ?? []).some((r) => r.startsWith('browser_'));
+              if (browser && agent.egress?.kind !== 'residential') {
+                fail(`${file}: agent "${agent.name}" runs a browser but does not require residential egress`);
+              }
+              if (browser && agent.host === 'nas') {
+                fail(`${file}: agent "${agent.name}" runs a browser on the NAS, whose egress is the same address as everything else it hosts`);
+              }
+            }
+
+            // A connector is a pipe. Staged rows are purged on ack, and
+            // seven days is the hard backstop when the consumer never acks.
+            const staged = stack.retention?.stagedDataDays;
+            need(Number.isInteger(staged) && staged > 0 && staged <= 7,
+              `retention.stagedDataDays must be 1..7, was ${staged}`);
+
+            // A browser has no encryption at rest we control, so a bundle
+            // issued to one gets a small window whatever the provider says.
+            const webCap = stack.bundle?.webTtlSecondsCap;
+            need(Number.isInteger(webCap) && webCap > 0 && webCap <= 3600,
+              `bundle.webTtlSecondsCap must be 1..3600, was ${webCap}`);
+
+            if (stack.role === 'prod' && stack.features?.rawPayloadDebug !== false) {
+              fail(`${file}: features.rawPayloadDebug must be false in production - raw provider payloads are a debugging aid and a liability`);
+            }
+          }
+
+          // ── the secrets manifest ──────────────────────────────────────
+          const manifest = JSON.parse(fs.readFileSync('infra/secrets.manifest.json', 'utf8'));
+          const owners = new Set(['generated', 'operator', 'module']);
+          const scopes = new Set(['stack', 'host', 'global', 'consumer']);
+          const names = new Set();
+
+          for (const secret of manifest.secrets ?? []) {
+            if (!secret.name) { fail('secrets.manifest.json: an entry has no name'); continue; }
+            if (names.has(secret.name)) fail(`secrets.manifest.json: duplicate entry "${secret.name}"`);
+            names.add(secret.name);
+            if (!owners.has(secret.owner)) fail(`${secret.name}: owner must be generated, operator or module`);
+            if (!scopes.has(secret.scope)) fail(`${secret.name}: scope must be stack, host, global or consumer`);
+            if (secret.service && !['bank', 'shop'].includes(secret.service)) fail(`${secret.name}: service must be bank or shop`);
+            if (!secret.rotation) fail(`${secret.name}: needs a rotation policy, even if it is "never"`);
+            if (!secret.purpose) fail(`${secret.name}: needs a purpose`);
+          }
+
+          for (const required of ['CONNECTOR_BANK_SUBJECT_SALT', 'CONNECTOR_SHOP_SUBJECT_SALT']) {
+            const entry = (manifest.secrets ?? []).find((s) => s.name === required);
+            if (!entry) fail(`secrets.manifest.json: ${required} is missing`);
+            // A connector holding its own subject salt could map a subject
+            // back to a person, which is the property the pseudonymous
+            // subject exists to buy.
+            else if (entry.scope !== 'consumer') fail(`${required}: scope must be consumer - a connector must never hold it`);
+          }
+
+          if (problems.length > 0) {
+            for (const p of problems) console.log(`::error::${p}`);
+            console.log(`\n${problems.length} problem(s)`);
+            process.exit(1);
+          }
+          console.log(`OK: ${files.length} stacks, ${names.size} secrets, ${(manifest.variables ?? []).length} variables`);
+          NODE
+
+  # Does the environment actually carry what the manifest says it must?
+  # Presence and non-emptiness only: values are never read, never printed
+  # and never compared.
+  verify:
+    needs: validate
+    # Fork pull requests cannot see environment secrets, and a job that
+    # reports everything missing is worse than a job that does not run.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: ${{ github.event_name == 'push' && fromJSON('["bank-prod","bank-staging","shop-prod","shop-staging"]') || fromJSON(format('["{0}"]', inputs.stack)) }}
+    environment: ${{ matrix.stack == 'bank-prod' && 'bank-production' || matrix.stack == 'shop-prod' && 'shop-production' || matrix.stack }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Verify ${{ matrix.stack }} against the manifest
+        env:
+          # Keys only. GitHub masks the values, and this script never
+          # touches them anyway.
+          SECRET_KEYS: ${{ toJSON(secrets) }}
+          VARIABLE_KEYS: ${{ toJSON(vars) }}
+          STACK: ${{ matrix.stack }}
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+
+          const present = (json) => new Set(
+            Object.entries(JSON.parse(json || '{}'))
+              .filter(([, v]) => typeof v === 'string' && v.length > 0)
+              .map(([k]) => k));
+
+          const secrets = present(process.env.SECRET_KEYS);
+          const variables = present(process.env.VARIABLE_KEYS);
+          const manifest = JSON.parse(fs.readFileSync('infra/secrets.manifest.json', 'utf8'));
+          const stack = process.env.STACK;
+          const service = stack.split('-')[0];
+
+          const missing = [];
+          const pending = [];
+
+          for (const secret of manifest.secrets) {
+            // A secret naming a service belongs only to that service's
+            // environments - the bank stack has no business holding the
+            // shop database's password, shared instance or not.
+            if (secret.service && secret.service !== service) continue;
+            // consumer-scope secrets live in the consuming app's own
+            // environment. Finding one here would be the bug.
+            if (secret.scope === 'consumer') {
+              if (secrets.has(secret.name)) {
+                console.log(`::error::${secret.name} is set on ${stack}, but it belongs to the consumer only`);
+                missing.push(secret.name);
+              }
+              continue;
+            }
+            if (secret.optional) continue;
+            if (!secrets.has(secret.name)) {
+              // module-owned values do not exist until their module has
+              // run, so their absence is a state, not a failure.
+              (secret.owner === 'module' ? pending : missing).push(secret.name);
+            }
+          }
+
+          for (const variable of manifest.variables ?? []) {
+            if (variable.scope === 'stack' && !variables.has(variable.name)) missing.push(variable.name);
+          }
+
+          for (const name of missing) console.log(`::error::${stack}: ${name} is not set`);
+          for (const name of pending) console.log(`::warning::${stack}: ${name} is not set yet (written back by its module)`);
+
+          const summary = [
+            `### ${stack}`,
+            '',
+            `- ${missing.length === 0 ? 'every required secret and variable is present' : `**${missing.length} missing**`}`,
+            `- ${pending.length} awaiting a module write-back`,
+            '',
+          ].join('\n');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+
+          if (missing.length > 0) process.exit(1);
+          NODE
+
+  # Writes. Manual dispatch only, one stack at a time, never on a push.
+  apply:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_only != true
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stack == 'bank-prod' && 'bank-production' || inputs.stack == 'shop-prod' && 'shop-production' || inputs.stack }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Apply ${{ inputs.stack }}
+        env:
+          # gh needs a token that can manage environments and secrets;
+          # GITHUB_TOKEN cannot.
+          GH_TOKEN: ${{ secrets.IAC_GH_PAT }}
+          CONNECTOR_DOMAIN: ${{ secrets.CONNECTOR_DOMAIN }}
+          LOGTO_INFRA_M2M_ID: ${{ secrets.LOGTO_INFRA_M2M_ID }}
+          LOGTO_INFRA_M2M_SECRET: ${{ secrets.LOGTO_INFRA_M2M_SECRET }}
+          SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
+          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
+          SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
+        run: |
+          if [ ! -f infra/bootstrap.mjs ]; then
+            echo "::error::infra/bootstrap.mjs does not exist yet, so applying a stack is still manual - follow Parts A and B of infra/README.md. Validation and verification (the other jobs here) work today and are what catch mistakes."
+            exit 1
+          fi
+          node infra/bootstrap.mjs --stack "${{ inputs.stack }}"
+
+      - name: Upload the rendered stack and its runbook
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iac-${{ inputs.stack }}-${{ github.run_number }}
+          path: infra/rendered/${{ inputs.stack }}/
+          retention-days: 30
+          if-no-files-found: ignore

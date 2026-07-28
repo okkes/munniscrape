@@ -1,0 +1,95 @@
+{
+  "currency": "EUR",
+  "merchant": "Mock Store",
+  "receipts": [
+    {
+      "external_id": "mock-2026-07-19-0001",
+      "purchased_at": "2026-07-19T17:42:00+02:00",
+      "store_name": "Mock Store Utrecht CS",
+      "total_minor": 1085,
+      "payment": {
+        "method": "card",
+        "card_last4": "1234",
+        "iban_tail": null
+      },
+      "items": [
+        {
+          "name": "Melk halfvol 1L",
+          "quantity": 2,
+          "unit_price_minor": 119,
+          "total_minor": 238,
+          "discount": {
+            "amount_minor": -30,
+            "label": "2e halve prijs"
+          }
+        },
+        {
+          "name": "Volkorenbrood heel",
+          "quantity": 1,
+          "unit_price_minor": 189,
+          "total_minor": 189
+        },
+        {
+          "name": "Bananen los",
+          "quantity": 1.2,
+          "unit_price_minor": 199,
+          "total_minor": 239
+        },
+        {
+          "name": "Kipfilet 300g",
+          "quantity": 1,
+          "unit_price_minor": 449,
+          "total_minor": 449
+        }
+      ]
+    },
+    {
+      "external_id": "mock-2026-07-05-0002",
+      "purchased_at": "2026-07-05T09:03:00+02:00",
+      "store_name": "Mock Store Utrecht Noord",
+      "total_minor": 957,
+      "payment": {
+        "method": "ideal",
+        "card_last4": null,
+        "iban_tail": "4300"
+      },
+      "items": [
+        {
+          "name": "Koffiebonen 500g",
+          "quantity": 1,
+          "unit_price_minor": 699,
+          "total_minor": 699
+        },
+        {
+          "name": "Appelsap 1L",
+          "quantity": 3,
+          "unit_price_minor": 129,
+          "total_minor": 387,
+          "discount": {
+            "amount_minor": -129,
+            "label": "3 halen 2 betalen"
+          }
+        }
+      ]
+    },
+    {
+      "external_id": "mock-2026-06-28-0003",
+      "purchased_at": "2026-06-28T20:55:00+02:00",
+      "store_name": "Mock Store Utrecht CS",
+      "total_minor": 500,
+      "payment": {
+        "method": "cash",
+        "card_last4": null,
+        "iban_tail": null
+      },
+      "items": [
+        {
+          "name": "Tandpasta 75ml",
+          "quantity": 1,
+          "unit_price_minor": 329,
+          "total_minor": 329
+        }
+      ]
+    }
+  ]
+}

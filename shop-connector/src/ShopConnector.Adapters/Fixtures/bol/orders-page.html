@@ -1,0 +1,101 @@
+<!--
+  SYNTHETIC. This is NOT a capture.
+
+  Nobody on this project has an account on bol.com, and the platform's rule is
+  that no live login is spent to look. So this file is written to the shape the
+  adapter's DEFAULT selectors describe - it proves the machinery (block
+  balancing, Dutch comma money, Dutch month names, discounts, reconciliation,
+  the empty/changed distinction), and it proves nothing whatsoever about bol's
+  real markup.
+
+  When a live capture lands: overwrite this file with it, run the suite, and
+  every selector list in BolOptions that has to change to make it pass is a
+  guess this file was hiding. That is the intended use.
+-->
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Mijn bestellingen</title>
+  <script type="application/json" id="decoy">{"note":"script content must never reach the text extractor"}</script>
+  <style>.order-total { font-weight: 700; }</style>
+</head>
+<body>
+  <main data-test="account-orders">
+    <h1>Mijn bestellingen</h1>
+
+    <li data-test="order-container" data-order-id="4001234567">
+      <div class="order-head">
+        <span data-test="order-date"><time datetime="2026-06-14T10:32:00+02:00">14 juni 2026</time></span>
+        <span data-test="order-total" class="order-total">&euro;&nbsp;54,97</span>
+        <span data-test="order-seller">bol.com</span>
+        <span data-test="payment-method">iDEAL</span>
+      </div>
+      <ul>
+        <li data-test="order-item">
+          <span data-test="item-title">Philips Hue White E27 &ndash; 2-pack</span>
+          <span data-test="item-quantity">2</span>
+          <span data-test="item-unit-price">&euro; 19,99</span>
+          <span data-test="item-total">&euro; 39,98</span>
+        </li>
+        <li data-test="order-item">
+          <span data-test="item-title">USB-C kabel 2 m</span>
+          <span data-test="item-quantity">1</span>
+          <span data-test="item-unit-price">&euro; 17,99</span>
+          <span data-test="item-total">&euro; 17,99</span>
+          <span data-test="item-discount">2e halve prijs &minus; &euro;&nbsp;3,00</span>
+        </li>
+      </ul>
+    </li>
+
+    <li data-test="order-container" data-order-id="4001199887">
+      <div class="order-head">
+        <!-- No machine-readable date here: the Dutch text is all there is,
+             which is the path that has to work when a page renders only what
+             a human reads. -->
+        <span data-test="order-date">3 maart 2026 om 21:48</span>
+        <span data-test="order-total" class="order-total">&euro; 1.249,00</span>
+        <span data-test="order-seller">TechDeal Nederland B.V.</span>
+        <span data-test="payment-method">Achteraf betalen</span>
+      </div>
+      <ul>
+        <li data-test="order-item">
+          <span data-test="item-title">Espressomachine De Luxe</span>
+          <span data-test="item-quantity">1</span>
+          <span data-test="item-unit-price">&euro; 1.249,00</span>
+          <span data-test="item-total">&euro; 1.249,00</span>
+        </li>
+      </ul>
+    </li>
+
+    <li data-test="order-container" data-order-id="4000998877">
+      <div class="order-head">
+        <span data-test="order-date"><time datetime="2025-12-24T08:05:00+01:00">24 december 2025</time></span>
+        <!-- Deliberately inconsistent: the stated total carries shipping the
+             lines do not, so this receipt must be FLAGGED and still emitted.
+             Dropping it would hide a real purchase; trusting it would hand
+             over a total we know disagrees with its own contents. -->
+        <span data-test="order-total" class="order-total">&euro; 32,94</span>
+        <span data-test="payment-method">Creditcard</span>
+      </div>
+      <ul>
+        <li data-test="order-item">
+          <span data-test="item-title">Kerstkaarten set van 20</span>
+          <span data-test="item-quantity">1</span>
+          <span data-test="item-total">&euro; 12,95</span>
+        </li>
+        <li data-test="order-item">
+          <span data-test="item-title">Vulpen blauw</span>
+          <span data-test="item-quantity">1</span>
+          <span data-test="item-total">&euro; 15,00</span>
+        </li>
+        <li data-test="order-item">
+          <!-- A row with a name and no price at all: a status label, not a
+               purchase. It must not become a line item at zero. -->
+          <span data-test="item-title">Bezorgd op 27 december</span>
+        </li>
+      </ul>
+    </li>
+  </main>
+</body>
+</html>

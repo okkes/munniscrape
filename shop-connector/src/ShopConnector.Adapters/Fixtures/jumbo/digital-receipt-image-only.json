@@ -1,0 +1,36 @@
+{
+  "data": {
+    "receipt": {
+      "transactionId": "TX-2026-07-19-778812",
+      "purchaseEndOn": "2026-07-19T17:42:11",
+      "receiptSource": "STORE",
+      "store": {
+        "name": "Jumbo Utrecht Amsterdamsestraatweg",
+        "location": {
+          "address": {
+            "city": "Utrecht",
+            "houseNumber": "641",
+            "postalCode": "3551CV",
+            "street": "Amsterdamsestraatweg"
+          }
+        }
+      },
+      "customerDetails": {
+        "customerId": "cust-4471",
+        "loyaltyCard": {
+          "number": "6014XXXXXXXX3312"
+        }
+      },
+      "receiptImage": {
+        "type": "PNG",
+        "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "receiptPoints": {
+          "earned": 11,
+          "newBalance": 1420,
+          "oldBalance": 1409,
+          "redeemed": 0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The bank product's data plane. A shell over Connector.Kit.Agent: the lease
+    loop, the browser harness and the challenge relay all live there, so a
+    pooled agent and a user's own BYO agent are the same image differing only
+    in configuration.
+
+    This is the only bank image with browser binaries and the only one that
+    ever holds a plaintext credential. It gets no database credential and
+    publishes no port - every call it makes is outbound.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BankConnector.Agent</RootNamespace>
+    <AssemblyName>BankConnector.Agent</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Referenced directly because Program.cs uses the generic host; it also
+         arrives transitively, and depending on that would be luck. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Web SDK does this for its hosts; the plain one does not, and an
+         agent that publishes without its settings has no control plane to
+         call. -->
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Development settings reach bin/ for `dotnet run` and never reach an
+      image. A development configuration inside a deployed container is a
+      foot-gun: one misspelled environment variable and an agent on a
+      residential box quietly long-polls localhost instead of the control
+      plane, looking perfectly healthy while it does it.
+    -->
+    <Content Include="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="Never" DependentUpon="appsettings.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\connector-kit\src\Connector.Kit.Agent\Connector.Kit.Agent.csproj" />
+    <ProjectReference Include="..\BankConnector.Adapters\BankConnector.Adapters.csproj" />
+  </ItemGroup>
+
+</Project>

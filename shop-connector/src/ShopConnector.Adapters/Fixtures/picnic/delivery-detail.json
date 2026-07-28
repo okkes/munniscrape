@@ -1,0 +1,194 @@
+{
+  "type": "DELIVERY",
+  "id": "dlv-7788-aaa",
+  "delivery_id": "dlv-7788-aaa",
+  "creation_time": "2026-07-17T20:14:07.412+02:00",
+  "slot": {
+    "slot_id": "68a1c0105e91961aea7ed87c",
+    "hub_id": "DVT",
+    "fc_id": "FCA",
+    "window_start": "2026-07-18T18:15:00.000+02:00",
+    "window_end": "2026-07-18T19:15:00.000+02:00",
+    "cut_off_time": "2026-07-17T23:00:00.000+02:00",
+    "is_available": false,
+    "selected": false,
+    "reserved": false,
+    "minimum_order_value": 4000,
+    "unavailability_reason": "CLOSED"
+  },
+  "eta2": {
+    "start": "2026-07-18T18:37:00.000+02:00",
+    "end": "2026-07-18T18:57:00.000+02:00"
+  },
+  "status": "COMPLETED",
+  "delivery_time": {
+    "start": "2026-07-18T19:48:21.005+02:00",
+    "end": "2026-07-18T19:53:38.217+02:00"
+  },
+  "orders": [
+    {
+      "type": "ORDER",
+      "id": "001-201-7788",
+      "items": [
+        {
+          "type": "ORDER_LINE",
+          "id": "5323",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1007102",
+              "name": "Anta Flu keelpastilles eucalyptus",
+              "image_ids": [
+                "fbb8f8243f319d7915a660e4dcbbbc5a839080bd2c34ba6abf8b24c9292a4454"
+              ],
+              "unit_quantity": "275 gram",
+              "unit_quantity_sub": "€8.55/kg",
+              "price": 235,
+              "max_count": 50,
+              "perishable": false,
+              "decorators": [
+                { "type": "IMMUTABLE" },
+                { "type": "QUANTITY", "quantity": 1 },
+                { "type": "UNIT_QUANTITY", "unit_quantity_text": "275 gram" }
+              ]
+            }
+          ],
+          "display_price": 235,
+          "price": 235
+        },
+        {
+          "type": "ORDER_LINE",
+          "id": "5344",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1009421",
+              "name": "Picnic halfvolle yoghurt",
+              "image_ids": [
+                "dac3a5bd99826c5d1602b388040e5419b7a131ece26372cb60a6d24c29a5c078"
+              ],
+              "unit_quantity": "1 liter",
+              "unit_quantity_sub": "€1.39/l",
+              "price": 139,
+              "max_count": 50,
+              "perishable": true,
+              "decorators": [
+                { "type": "IMMUTABLE" },
+                { "type": "QUANTITY", "quantity": 2 },
+                { "type": "UNIT_QUANTITY", "unit_quantity_text": "1 liter" }
+              ]
+            }
+          ],
+          "display_price": 270,
+          "price": 270
+        },
+        {
+          "type": "ORDER_LINE",
+          "id": "5333",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1006049",
+              "name": "Tante Fanny flammkuchendeeg",
+              "image_ids": [
+                "08020111d4541cb198646a507289754ba4c1a90c098ed4f982cc17294653bdd1"
+              ],
+              "unit_quantity": "260 gram",
+              "unit_quantity_sub": "€7.65/kg",
+              "price": 199,
+              "max_count": 50,
+              "perishable": true,
+              "decorators": [
+                { "type": "IMMUTABLE" },
+                { "type": "QUANTITY", "quantity": 1 },
+                { "type": "UNIT_QUANTITY", "unit_quantity_text": "260 gram" }
+              ]
+            }
+          ],
+          "display_price": 199,
+          "price": 199,
+          "decorators": [
+            { "type": "PRICE", "display_price": 159 },
+            { "type": "PROMO", "text": "20% korting" }
+          ]
+        },
+        {
+          "type": "ORDER_LINE",
+          "id": "5345",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1016202",
+              "name": "Picnic vega filet americain",
+              "image_ids": [
+                "b4e2d6048298bbb5b5998106d359cdf9c650fbee5d51744aa4f181069641bcb4"
+              ],
+              "unit_quantity": "150 gram",
+              "unit_quantity_sub": "€15.93/kg",
+              "price": 239,
+              "max_count": 50,
+              "perishable": true,
+              "decorators": [
+                { "type": "IMMUTABLE" },
+                { "type": "QUANTITY", "quantity": 1 },
+                { "type": "UNIT_QUANTITY", "unit_quantity_text": "150 gram" }
+              ]
+            }
+          ],
+          "display_price": 239,
+          "price": 239,
+          "decorators": [
+            { "type": "PRICE", "display_price": 191 },
+            { "type": "PROMO", "text": "20% korting" }
+          ]
+        },
+        {
+          "type": "ORDER_LINE",
+          "id": "5339",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1014732",
+              "name": "Scharrelkipfilet in blokjes",
+              "image_ids": [
+                "8c178471c259b1689d210325d25840e51c68be434fc5b5064e0e587a25cee59c"
+              ],
+              "unit_quantity": "350 gram",
+              "unit_quantity_sub": "€16.54/kg",
+              "price": 579,
+              "max_count": 50,
+              "perishable": true,
+              "decorators": [
+                { "type": "IMMUTABLE" },
+                { "type": "QUANTITY", "quantity": 1 },
+                { "type": "UNIT_QUANTITY", "unit_quantity_text": "350 gram" }
+              ]
+            }
+          ],
+          "display_price": 579,
+          "price": 579
+        }
+      ],
+      "slot_selector_message": null,
+      "total_price": 1469,
+      "checkout_total_price": 1469,
+      "total_savings": 88,
+      "total_deposit": 35,
+      "cancellable": false,
+      "transaction_info": {
+        "bank_id": "INGBNL2A",
+        "payment_type": "IDEAL",
+        "redacted_iban": "•••• 2173",
+        "refund_account": false
+      },
+      "creation_time": "2026-07-17T20:14:07.412+02:00",
+      "status": "COMPLETED",
+      "deposit_breakdown": [
+        { "type": "BAG", "value": 35, "count": 1 }
+      ],
+      "decorator_overrides": {}
+    }
+  ],
+  "returned_containers": [],
+  "parcels": []
+}

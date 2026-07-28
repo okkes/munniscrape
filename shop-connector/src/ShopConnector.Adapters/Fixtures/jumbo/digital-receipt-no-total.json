@@ -1,0 +1,36 @@
+{
+  "data": {
+    "receipt": {
+      "transactionId": "TX-2026-07-19-778812",
+      "purchaseEndOn": "2026-07-19T17:42:11",
+      "receiptSource": "STORE",
+      "store": {
+        "name": "Jumbo Utrecht Amsterdamsestraatweg",
+        "location": {
+          "address": {
+            "city": "Utrecht",
+            "houseNumber": "641",
+            "postalCode": "3551CV",
+            "street": "Amsterdamsestraatweg"
+          }
+        }
+      },
+      "customerDetails": {
+        "customerId": "cust-4471",
+        "loyaltyCard": {
+          "number": "6014XXXXXXXX3312"
+        }
+      },
+      "receiptImage": {
+        "type": "JSON",
+        "image": "{\"documents\":[{\"documents\":[{\"printSections\":[{\"textObjects\":[{\"textLines\":[{\"texts\":[{\"text\":\"JUMBO UTRECHT AMSTERDAMSESTRAATWEG\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"Amsterdamsestraatweg 641, 3551 CV Utrecht\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"19-07-2026\"},{\"text\":\"17:42\"}]}]}]},{\"textObjects\":[{\"textLines\":[{\"texts\":[{\"text\":\"OMSCHRIJVING\"},{\"text\":\"BEDRAG\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"MELK HALFVOL\"},{\"text\":\"1,88\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"  2 X 0,94\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"BANANEN\"},{\"text\":\"1,89\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"KIPFILET\"},{\"text\":\"P\"},{\"text\":\"6,99\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"STATIEGELD\"},{\"text\":\"0,30\"}]}]}]},{\"textObjects\":[{\"textLines\":[{\"texts\":[{\"text\":\"Betaald\"},{\"text\":\"PIN\"},{\"text\":\"11,06\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"BTW%\"},{\"text\":\"Bedrag excl\"},{\"text\":\"BTW\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"9\"},{\"text\":\"10,15\"},{\"text\":\"0,91\"}]}]},{\"textLines\":[{\"texts\":[{\"text\":\"Spaarpunten\"},{\"text\":\"11\"}]}]}]}]}]}]}",
+        "receiptPoints": {
+          "earned": 11,
+          "newBalance": 1420,
+          "oldBalance": 1409,
+          "redeemed": 0
+        }
+      }
+    }
+  }
+}

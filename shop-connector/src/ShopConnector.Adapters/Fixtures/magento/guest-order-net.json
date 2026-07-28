@@ -1,0 +1,42 @@
+{
+  "data": {
+    "guestOrder": {
+      "number": "300000118",
+      "order_date": "02/11/2026 09:15:00",
+      "status": "Processing",
+      "email": "kunde@example.de",
+      "shipping_method": null,
+      "payment_methods": [
+        {
+          "name": "Kreditkarte",
+          "type": "adyen_cc"
+        }
+      ],
+      "total": {
+        "grand_total": { "value": 123.76, "currency": "EUR" },
+        "subtotal_incl_tax": { "value": 123.76, "currency": "EUR" },
+        "subtotal_excl_tax": { "value": 104, "currency": "EUR" },
+        "total_tax": { "value": 19.76, "currency": "EUR" },
+        "total_shipping": { "value": 0, "currency": "EUR" },
+        "shipping_handling": {
+          "amount_including_tax": { "value": 0, "currency": "EUR" }
+        },
+        "discounts": []
+      },
+      "items": [
+        {
+          "product_name": "Werkstattlampe LED",
+          "product_sku": "WL-LED-900",
+          "quantity_ordered": 1,
+          "product_sale_price": { "value": 79, "currency": "EUR" }
+        },
+        {
+          "product_name": "Ersatzglas",
+          "product_sku": "WL-GLAS",
+          "quantity_ordered": 2,
+          "product_sale_price": { "value": 12.5, "currency": "EUR" }
+        }
+      ]
+    }
+  }
+}

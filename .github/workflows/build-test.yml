@@ -1,0 +1,95 @@
+name: Build & test
+
+# Restore, build and test everything .NET in the repo. A docs, deploy or
+# infra change does not run this - none of them can break a build, and a
+# CI run that cannot fail teaches people to ignore CI.
+on:
+  push:
+    branches: [main, master, dev]
+    paths-ignore:
+      - 'docs/**'
+      - 'deploy/**'
+      - 'infra/**'
+      - '**/*.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'deploy/**'
+      - 'infra/**'
+      - '**/*.md'
+  workflow_dispatch:
+  # release-images.yml calls this before it publishes anything, so an
+  # image is never pushed from a tree that does not build or pass.
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Discover projects
+        # The lists go to files rather than step outputs: an output would
+        # be interpolated into a later step's shell by the expression
+        # engine, and a file name is attacker-controlled on a fork PR.
+        run: |
+          # git ls-files rather than find: it cannot pick up a stray
+          # project inside an ignored bin/ or obj/ directory.
+          git ls-files '*.csproj' | sort > /tmp/projects.txt
+          if [ ! -s /tmp/projects.txt ]; then
+            echo "::error::no .csproj found - the checkout is not what this workflow expects"
+            exit 1
+          fi
+          grep -E '\.Tests\.csproj$' /tmp/projects.txt > /tmp/test-projects.txt || true
+          if [ ! -s /tmp/test-projects.txt ]; then
+            echo "::error::no *.Tests.csproj found. Adapter parsing is tested offline from fixtures; a repo with no tests is a repo where a provider shape change lands silently."
+            exit 1
+          fi
+          echo "### Projects" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^/- /' /tmp/projects.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore
+        run: |
+          while IFS= read -r proj; do
+            dotnet restore "$proj"
+          done < /tmp/projects.txt
+
+      - name: Build
+        # TreatWarningsAsErrors is already on repo-wide for the compiler;
+        # -warnaserror adds the MSBuild and NuGet warnings it does not
+        # cover, so a downgraded package or a duplicate item is also fatal.
+        # ContinuousIntegrationBuild keeps the output deterministic, which
+        # the idempotency contract depends on.
+        run: |
+          while IFS= read -r proj; do
+            dotnet build "$proj" -c Release --no-restore -warnaserror \
+              -p:ContinuousIntegrationBuild=true
+          done < /tmp/projects.txt
+
+      - name: Test
+        run: |
+          while IFS= read -r proj; do
+            dotnet test "$proj" -c Release --no-build --logger 'trx;LogFileName=results.trx'
+          done < /tmp/test-projects.txt
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ github.run_number }}
+          path: '**/TestResults/*.trx'
+          retention-days: 14
+          if-no-files-found: ignore

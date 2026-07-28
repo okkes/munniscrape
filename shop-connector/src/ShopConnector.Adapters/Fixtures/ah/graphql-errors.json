@@ -1,0 +1,19 @@
+{
+  "errors": [
+    {
+      "message": "Member is not entitled to posReceiptsPage",
+      "path": [
+        "posReceiptsPage"
+      ],
+      "extensions": {
+        "code": "FORBIDDEN"
+      }
+    },
+    {
+      "message": "Cannot return null for non-nullable field posReceiptsPage.posReceipts"
+    }
+  ],
+  "data": {
+    "posReceiptsPage": null
+  }
+}

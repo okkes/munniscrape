@@ -1,0 +1,1199 @@
+/* ==========================================================================
+   Connector demo client
+   Self-contained: no font host, no CDN, no framework. System stacks only, so
+   the page looks native on every platform and works with the network off.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Tokens
+   One palette, expressed twice. The dark set is driven by prefers-color-scheme
+   rather than a toggle: the OS already knows the answer.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --ink: #16181d;
+  --ink-muted: #5d6470;
+  --line: #dfe3e9;
+  --line-strong: #c6ccd6;
+
+  --accent: #3d5afe;
+  --accent-ink: #ffffff;
+  --accent-soft: #e8ebff;
+
+  --good: #0f7b48;
+  --good-soft: #e2f5ea;
+  --warn: #96620a;
+  --warn-soft: #fdf0d8;
+  --bad: #b3261e;
+  --bad-soft: #fdeceb;
+  --info: #0b5f8a;
+  --info-soft: #e2f1fa;
+  --custody: #6b3fa0;
+  --custody-soft: #f0e9fa;
+  --secret: #a1224c;
+  --secret-soft: #fce9ef;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 8px 24px rgb(16 24 40 / 6%);
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101216;
+    --surface: #171a20;
+    --surface-2: #1e222a;
+    --ink: #e8eaee;
+    --ink-muted: #99a1ae;
+    --line: #282d37;
+    --line-strong: #3a4150;
+
+    --accent: #8aa0ff;
+    --accent-ink: #10131a;
+    --accent-soft: #1d2440;
+
+    --good: #6ede9f;
+    --good-soft: #12291d;
+    --warn: #e9bd6a;
+    --warn-soft: #2c2415;
+    --bad: #ff9a92;
+    --bad-soft: #2e1917;
+    --info: #7cc7ee;
+    --info-soft: #12242e;
+    --custody: #c4a6f0;
+    --custody-soft: #241b33;
+    --secret: #f2a0bb;
+    --secret-soft: #2e1721;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   2. Base
+   -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 1.15rem;
+}
+
+h2 {
+  font-size: 1.5rem;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+p {
+  margin: 0.5rem 0;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.05em 0.4em;
+  /* Session ids and sealed bundles are long and unbreakable; without this
+     one of them widens the whole page. */
+  overflow-wrap: anywhere;
+}
+
+code.block {
+  display: block;
+  padding: 0.6rem 0.75rem;
+  margin: 0.4rem 0;
+}
+
+/* An unmapped copy key. Loud on purpose - a missing string is a bug. */
+.copy-missing {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+.small {
+  font-size: 0.85em;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.wrap {
+  max-width: 32ch;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   3. Layout
+   -------------------------------------------------------------------------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0.9rem 1.25rem 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.topbar-sub {
+  margin: 0.25rem 0 0;
+  color: var(--ink-muted);
+  max-width: 68ch;
+  font-size: 0.9rem;
+}
+
+.topbar-chips {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.tabs {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.6rem 0.75rem;
+  color: var(--ink-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+main {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+
+.lede {
+  color: var(--ink-muted);
+  max-width: 78ch;
+  margin: 0.5rem 0 1.5rem;
+}
+
+.footer {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+  border-top: 1px solid var(--line);
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+/* --------------------------------------------------------------------------
+   4. Panels, cards, grid
+   -------------------------------------------------------------------------- */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.panel-good {
+  border-color: color-mix(in srgb, var(--good) 45%, var(--line));
+}
+
+.panel-warn {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  box-shadow: var(--shadow);
+}
+
+/* A provider that cannot be connected must not look like one that can. */
+.card-blocked {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+.card-head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.card-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+/* --------------------------------------------------------------------------
+   5. Badges and chips
+   -------------------------------------------------------------------------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.badge-neutral {
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  border-color: var(--line);
+}
+
+.badge-good {
+  background: var(--good-soft);
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 35%, transparent);
+}
+
+.badge-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+
+.badge-bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 35%, transparent);
+}
+
+.badge-info {
+  background: var(--info-soft);
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 35%, transparent);
+}
+
+.badge-service {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.badge-custody {
+  background: var(--custody-soft);
+  color: var(--custody);
+  border-color: color-mix(in srgb, var(--custody) 35%, transparent);
+}
+
+.badge-secret {
+  background: var(--secret-soft);
+  color: var(--secret);
+  border-color: color-mix(in srgb, var(--secret) 35%, transparent);
+  margin-left: 0.4rem;
+}
+
+.badge-challenge {
+  background: var(--info-soft);
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 35%, transparent);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.badge-discount {
+  background: var(--good-soft);
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 35%, transparent);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* --------------------------------------------------------------------------
+   6. Fact lists
+   -------------------------------------------------------------------------- */
+
+.facts {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+
+.field-label {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+   7. Forms
+   -------------------------------------------------------------------------- */
+
+.manifest-form,
+.connect-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.step {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.9rem 1rem 1rem;
+  margin: 0;
+  display: grid;
+  gap: 0.9rem;
+  background: var(--surface-2);
+}
+
+.step legend {
+  padding: 0 0.4rem;
+  font-weight: 600;
+}
+
+.step-config {
+  border-style: dashed;
+}
+
+.form-row {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.form-row label {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+.control {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.control:focus {
+  border-color: var(--accent);
+}
+
+.control.is-invalid {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+/* The manifest's own words about a field: key, type, pattern. Shown because
+   this app is documentation as much as it is a demo. */
+.form-hint {
+  margin: 0;
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.form-error {
+  margin: 0;
+  min-height: 1rem;
+  color: var(--bad);
+  font-size: 0.85rem;
+}
+
+.checks,
+.radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.check,
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+button.primary,
+button.ghost,
+.button-link {
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+button.primary,
+.button-link {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+button.ghost {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.small-button {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.pill-tabs {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.pill {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-muted);
+  border-radius: 999px;
+  padding: 0.25rem 0.8rem;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.pill.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* --------------------------------------------------------------------------
+   8. Progress trail
+   Every step in the enum is drawn, not just the ones that happened - that is
+   what makes it a trail instead of a status line.
+   -------------------------------------------------------------------------- */
+
+.trail {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+}
+
+.trail-step {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.trail-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  flex: none;
+}
+
+.trail-step.is-done {
+  color: var(--ink);
+}
+
+.trail-step.is-done .trail-dot {
+  background: var(--good);
+  border-color: var(--good);
+}
+
+.trail-step.is-current {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.trail-step.is-current .trail-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.trail-step.is-pending {
+  opacity: 0.55;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   9. Challenges
+   -------------------------------------------------------------------------- */
+
+.challenge {
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--info) 40%, var(--line));
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.challenge-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.challenge-head h3 {
+  margin-top: 0.25rem;
+}
+
+.challenge-prompt {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.challenge-meta {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.countdown {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.countdown.is-urgent {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.countdown.is-expired {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.challenge-image img {
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+/* --------------------------------------------------------------------------
+   9a. A picture answered with taps
+
+   The geometry here is load-bearing, not decoration. Taps are measured
+   against `.tap-image`'s own client rectangle, and `.tap-stage` shrink-wraps
+   it so the numbered marks - which are positioned in per cent of the stage -
+   overlay exactly that same box.
+
+   Which is why the stage carries NO border and NO padding. A 1px border would
+   put every mark out by that border, and a container with a different aspect
+   ratio would letterbox the picture and put them out by far more. The visible
+   edge is an outline instead: painted outside the box, and never part of any
+   measurement.
+   -------------------------------------------------------------------------- */
+
+.tap-stage {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: min(100%, 34rem);
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  line-height: 0;
+  cursor: crosshair;
+  outline: 1px solid var(--line-strong);
+  outline-offset: 0;
+  border-radius: 0;
+  /* No double-tap-to-zoom delay: a tile grid is tapped quickly and twice. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.tap-stage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tap-stage:disabled {
+  cursor: not-allowed;
+}
+
+/* Natural aspect ratio, scaled down to fit and never up: an upscaled capture
+   is blurrier than the human needs it to be, and the fraction a tap turns
+   into is the same either way. */
+.tap-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+  /* Every press belongs to the stage, which is the box the coordinates are
+     measured against - and it stops a desktop drag from picking the picture
+     up instead of tapping it. */
+  pointer-events: none;
+}
+
+.tap-marks,
+.tap-crosshair {
+  position: absolute;
+  pointer-events: none;
+}
+
+.tap-marks {
+  inset: 0;
+}
+
+/* Per cent of the stage, so a mark stays on the feature it was put on when
+   the window is resized or the phone is turned. */
+.tap-mark {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+  font: 600 0.8rem/1 var(--sans);
+}
+
+/* Only for the keyboard path, so it appears exactly when the arrow keys do
+   something. */
+.tap-crosshair {
+  left: 50%;
+  top: 50%;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: -0.8rem 0 0 -0.8rem;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px #fff;
+  opacity: 0;
+}
+
+.tap-stage:focus-visible .tap-crosshair {
+  opacity: 1;
+}
+
+.tap-count {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+/* A QR has to be scannable from a phone held in front of the screen. */
+.challenge-qr img {
+  width: min(280px, 80vw);
+  height: auto;
+  padding: 12px;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+
+/* The one code that travels outward: from us, to the human, into a device. */
+.code-display {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+  padding: 1rem;
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+}
+
+.code-display-label {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.code-display-value {
+  font-family: var(--mono);
+  font-size: clamp(2rem, 9vw, 3.25rem);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+}
+
+.answer-form {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.answer-label {
+  font-weight: 500;
+}
+
+.answer-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.answer-row .control {
+  flex: 1 1 14rem;
+  width: auto;
+}
+
+.waiting {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 0.9rem 1rem;
+}
+
+/* Where an answer's outcome lands. Empty until something happens, so it
+   collapses rather than leaving a gap under every challenge. */
+.challenge-status:empty,
+.connect-errors:empty {
+  display: none;
+}
+
+.challenge-status,
+.connect-errors {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.param-form {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
+}
+
+.redirect-explainer code.block {
+  background: var(--surface-2);
+}
+
+/* --------------------------------------------------------------------------
+   10. Records and tables
+   -------------------------------------------------------------------------- */
+
+.records {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.record {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 0.9rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* Not reconciled is a real state the platform surfaces deliberately, so it
+   is loud rather than tucked away. */
+.record.is-unreconciled {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad-soft) 55%, var(--surface));
+}
+
+.record-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.record-amount {
+  display: grid;
+  justify-items: end;
+  gap: 0.25rem;
+  text-align: right;
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.amount-negative {
+  color: var(--bad);
+}
+
+.amount-positive {
+  color: var(--good);
+}
+
+.record-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.items summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+
+.items-table,
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.items-table th,
+.data-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+}
+
+.items-table td,
+.data-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.data-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+/* Wide content scrolls inside its own box; the page itself never does. */
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.discount {
+  margin-top: 0.2rem;
+}
+
+.raw {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.ack-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+}
+
+.results {
+  display: grid;
+  gap: 1rem;
+}
+
+/* --------------------------------------------------------------------------
+   11. Alerts, notes, toasts, spinner
+   -------------------------------------------------------------------------- */
+
+.alert {
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid;
+}
+
+.alert-error {
+  background: var(--bad-soft);
+  border-color: color-mix(in srgb, var(--bad) 40%, transparent);
+}
+
+/* agent_unavailable and friends: an instruction, not a failure. */
+.alert-notice {
+  background: var(--info-soft);
+  border-color: color-mix(in srgb, var(--info) 40%, transparent);
+}
+
+.alert-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.alert-hint {
+  margin: 0;
+}
+
+.alert-meta {
+  margin: 0;
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.note {
+  margin: 0.35rem 0;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  max-width: 76ch;
+}
+
+.empty {
+  color: var(--ink-muted);
+  background: var(--surface);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.spinner-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink-muted);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+
+.trail-spin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.toasts {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  display: grid;
+  gap: 0.5rem;
+  z-index: 50;
+}
+
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.9rem;
+  box-shadow: var(--shadow);
+  max-width: min(360px, 88vw);
+}
+
+.toast-warn {
+  border-left-color: var(--warn);
+}
+
+.progress-box:empty,
+.challenge-box:empty,
+.status-box:empty {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   12. Small screens and reduced motion
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .field {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+
+  .record-head,
+  .card-head,
+  .challenge-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .record-amount {
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .spinner,
+  .trail-spin,
+  .trail-step.is-current .trail-dot {
+    animation: none;
+  }
+}

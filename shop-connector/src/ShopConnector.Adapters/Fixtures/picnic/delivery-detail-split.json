@@ -1,0 +1,193 @@
+{
+  "type": "DELIVERY",
+  "id": "dlv-1145-bbb",
+  "delivery_id": "dlv-1145-bbb",
+  "creation_time": "2026-07-10T21:03:11.008+02:00",
+  "slot": {
+    "slot_id": "68952d7133fe3a437f0eaef3",
+    "hub_id": "DVT",
+    "fc_id": "FCA",
+    "window_start": "2026-07-11T10:45:00.000+02:00",
+    "window_end": "2026-07-11T12:30:00.000+02:00",
+    "cut_off_time": "2026-07-11T04:00:00.000+02:00",
+    "is_available": false,
+    "selected": false,
+    "reserved": false
+  },
+  "eta2": {
+    "start": "2026-07-11T11:04:00.000+02:00",
+    "end": "2026-07-11T11:24:00.000+02:00"
+  },
+  "status": "COMPLETED",
+  "delivery_time": {
+    "start": "2026-07-11T11:27:17.942+02:00",
+    "end": "2026-07-11T11:30:53.437+02:00"
+  },
+  "orders": [
+    {
+      "type": "ORDER",
+      "id": "002-330-1145",
+      "items": [
+        {
+          "type": "ORDER_LINE",
+          "id": "6101",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1011800",
+              "name": "Picnic gezeefde tomaten",
+              "unit_quantity": "500 gram",
+              "unit_quantity_sub": "€1.78/kg",
+              "price": 89,
+              "decorators": [
+                { "type": "QUANTITY", "quantity": 5 }
+              ]
+            }
+          ],
+          "display_price": 445,
+          "price": 445
+        },
+        {
+          "type": "ORDER_LINE",
+          "id": "6102",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1016998",
+              "name": "Kellogg's rice krispies",
+              "unit_quantity": "360 gram",
+              "unit_quantity_sub": "€9.69/kg",
+              "price": 349,
+              "decorators": [
+                { "type": "QUANTITY", "quantity": 1 }
+              ]
+            }
+          ],
+          "display_price": 349,
+          "price": 349
+        },
+        {
+          "type": "ORDER_LINE",
+          "id": "6103",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1014732",
+              "name": "Scharrelkipfilet in blokjes",
+              "unit_quantity": "350 gram",
+              "unit_quantity_sub": "€16.54/kg",
+              "price": 579,
+              "decorators": [
+                { "type": "QUANTITY", "quantity": 9 }
+              ]
+            }
+          ],
+          "display_price": 5211,
+          "price": 5211
+        }
+      ],
+      "total_price": 6290,
+      "checkout_total_price": 6290,
+      "total_savings": 0,
+      "total_deposit": 285,
+      "cancellable": false,
+      "transaction_info": {
+        "bank_id": "INGBNL2A",
+        "payment_type": "DIRECT_DEBIT",
+        "redacted_iban": "•••• 4408",
+        "refund_account": false
+      },
+      "creation_time": "2026-07-10T21:03:11.008+02:00",
+      "status": "COMPLETED",
+      "deposit_breakdown": [
+        { "type": "BAG", "value": 35, "count": 1 },
+        { "type": "DEFAULT", "value": 250, "count": 10 }
+      ],
+      "decorator_overrides": {}
+    },
+    {
+      "type": "ORDER",
+      "id": "002-330-9902",
+      "items": [
+        {
+          "type": "ORDER_LINE",
+          "id": "6210",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1008206",
+              "name": "Galbani mozzarella",
+              "unit_quantity": "125 gram",
+              "unit_quantity_sub": "€17.20/kg",
+              "price": 215,
+              "decorators": [
+                { "type": "QUANTITY", "quantity": 4 }
+              ]
+            }
+          ],
+          "display_price": 836,
+          "price": 836,
+          "decorators": [
+            { "type": "PRICE", "display_price": 800 },
+            { "type": "PROMO", "text": "4 voor 8,00" }
+          ]
+        },
+        {
+          "type": "ORDER_LINE",
+          "id": "6211",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1004441",
+              "name": "Witte champignons",
+              "unit_quantity": "250 gram",
+              "unit_quantity_sub": "€5.16/kg",
+              "price": 145,
+              "decorators": [
+                { "type": "QUANTITY", "quantity": 1 }
+              ]
+            }
+          ],
+          "display_price": 145,
+          "price": 145
+        },
+        {
+          "type": "ORDER_LINE",
+          "id": "6212",
+          "items": [
+            {
+              "type": "ORDER_ARTICLE",
+              "id": "s1001333",
+              "name": "Paprika mix",
+              "unit_quantity": "3 stuks",
+              "unit_quantity_sub": "€3.78/kg",
+              "price": 189,
+              "decorators": [
+                { "type": "QUANTITY", "quantity": 8 }
+              ]
+            }
+          ],
+          "display_price": 1510,
+          "price": 1510
+        }
+      ],
+      "total_price": 2455,
+      "checkout_total_price": 2455,
+      "total_savings": 36,
+      "total_deposit": 0,
+      "cancellable": false,
+      "transaction_info": {
+        "bank_id": "INGBNL2A",
+        "payment_type": "DIRECT_DEBIT",
+        "redacted_iban": "•••• 4408",
+        "refund_account": false
+      },
+      "creation_time": "2026-07-11T00:18:55.857+02:00",
+      "status": "COMPLETED",
+      "deposit_breakdown": [],
+      "decorator_overrides": {}
+    }
+  ],
+  "returned_containers": [],
+  "parcels": []
+}

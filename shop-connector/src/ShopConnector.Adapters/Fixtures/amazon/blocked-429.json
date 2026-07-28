@@ -1,0 +1,16 @@
+{
+  "url": "https://www.amazon.nl/your-orders/orders?timeFilter=year-2026&startIndex=0",
+  "status": 429,
+  "html": [
+    "<!doctype html>",
+    "<html lang=\"en\">",
+    "<head><meta charset=\"utf-8\"><title>Amazon.nl</title></head>",
+    "<body>",
+    "<div class=\"a-container\">",
+    "  <h4>Request blocked</h4>",
+    "  <p>We are sorry, but too many requests have been received from this client.</p>",
+    "</div>",
+    "</body>",
+    "</html>"
+  ]
+}

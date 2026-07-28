@@ -1,0 +1,61 @@
+-- Runs once, on the first start of an empty Postgres data directory.
+--
+-- The two products get separate databases and separate roles, and neither
+-- role may connect to the other's database. That is the whole point of the
+-- split: a breach of the shopping connector must not reach bank sessions,
+-- and a leaked bank connection string must not read anyone's receipts.
+-- Separate INSTANCES are stronger still and are where the prod stacks go
+-- when the two services stop sharing a host; this is the one-host shape,
+-- and it must not be weaker than it looks.
+--
+-- Passwords arrive as environment variables on the postgres container
+-- rather than as literals in this file, so a copy of the repo is never a
+-- copy of the credentials.
+
+\getenv bank_password BANK_DB_PASSWORD
+\getenv shop_password SHOP_DB_PASSWORD
+
+-- \getenv leaves the variable undefined when the environment variable is
+-- absent, which would make the CREATE ROLE below silently ambiguous.
+-- Normalise to empty, then refuse loudly.
+\if :{?bank_password}
+\else
+\set bank_password ''
+\endif
+\if :{?shop_password}
+\else
+\set shop_password ''
+\endif
+
+DO $$
+BEGIN
+    IF length(:'bank_password') = 0 THEN
+        RAISE EXCEPTION 'BANK_DB_PASSWORD is not set on the postgres container';
+    END IF;
+    IF length(:'shop_password') = 0 THEN
+        RAISE EXCEPTION 'SHOP_DB_PASSWORD is not set on the postgres container';
+    END IF;
+END $$;
+
+CREATE ROLE bank_connector WITH LOGIN PASSWORD :'bank_password';
+CREATE ROLE shop_connector WITH LOGIN PASSWORD :'shop_password';
+
+CREATE DATABASE bank_connector OWNER bank_connector;
+CREATE DATABASE shop_connector OWNER shop_connector;
+
+-- PUBLIC gets CONNECT on a new database by default, which would leave each
+-- service one connection string away from the other's data.
+REVOKE CONNECT ON DATABASE bank_connector FROM PUBLIC;
+REVOKE CONNECT ON DATABASE shop_connector FROM PUBLIC;
+GRANT CONNECT ON DATABASE bank_connector TO bank_connector;
+GRANT CONNECT ON DATABASE shop_connector TO shop_connector;
+
+-- Same reasoning inside each database. Each service migrates its own
+-- schema as its own owner and has no business in the other's.
+\connect bank_connector
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT ALL ON SCHEMA public TO bank_connector;
+
+\connect shop_connector
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT ALL ON SCHEMA public TO shop_connector;

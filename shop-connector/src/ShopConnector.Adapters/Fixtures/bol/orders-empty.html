@@ -1,0 +1,20 @@
+<!--
+  SYNTHETIC. An account that has never ordered anything.
+
+  It exists to keep two observations apart that look identical from the
+  parser's seat - no order blocks - and whose honest answers are opposite:
+  this one is a clean empty sync, and the same page WITHOUT an empty-state
+  marker is a shape change that pages an operator.
+-->
+<!DOCTYPE html>
+<html lang="nl">
+<head><meta charset="utf-8"><title>Mijn bestellingen</title></head>
+<body>
+  <main data-test="account-orders">
+    <h1>Mijn bestellingen</h1>
+    <section data-test="no-orders">
+      <p>Je hebt nog geen bestellingen geplaatst.</p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The domain contract shared by every connector service.
+
+    Deliberately dependency-free beyond the base framework: these types are
+    the wire contract, the crypto and the invariants, and anything that can
+    be tested without a host or a database belongs here.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Connector.Kit</RootNamespace>
+    <AssemblyName>Connector.Kit</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The adapter contract exposes Playwright's IPage, because an adapter
+      that drives a browser needs the real thing and an abstraction over it
+      would be a fiction. This is a compile-time reference only: browser
+      BINARIES are installed by an explicit CLI step that runs solely in the
+      agent image, so the control plane still ships without one.
+    -->
+    <PackageReference Include="Microsoft.Playwright" />
+  </ItemGroup>
+
+</Project>

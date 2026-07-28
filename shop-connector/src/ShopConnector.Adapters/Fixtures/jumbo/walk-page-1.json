@@ -1,0 +1,48 @@
+{
+  "data": {
+    "storeReceipts": {
+      "totalResults": 3,
+      "pageSize": 1,
+      "currentPage": 0,
+      "receipts": [
+        {
+          "transactionId": "TX-2026-07-19-778812",
+          "purchaseEndOn": "2026-07-19T17:42:11",
+          "receiptSource": "STORE",
+          "store": {
+            "storeId": "3105",
+            "name": "Jumbo Utrecht Amsterdamsestraatweg"
+          },
+          "pointBalance": 1420
+        }
+      ]
+    },
+    "onlineOrders": {
+      "totalCount": 3,
+      "orders": [
+        {
+          "orderId": "90211",
+          "deliveryDate": "2026-07-20",
+          "fulfilmentType": "HOME_DELIVERY",
+          "status": "CLOSED",
+          "branchName": "Jumbo Utrecht Amsterdamsestraatweg",
+          "totalToPayMoneyType": {
+            "amount": "31.13",
+            "currency": "EUR"
+          }
+        },
+        {
+          "orderId": "90118",
+          "deliveryDate": "2026-07-13",
+          "fulfilmentType": "COLLECTION",
+          "status": "CLOSED",
+          "branchName": "Jumbo Utrecht Kanaleneiland",
+          "totalToPayMoneyType": {
+            "amount": "12.40",
+            "currency": "EUR"
+          }
+        }
+      ]
+    }
+  }
+}

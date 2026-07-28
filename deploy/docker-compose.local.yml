@@ -1,0 +1,186 @@
+# Both connectors, end to end, on one machine. Clean-machine runnable:
+#
+#   docker compose -f deploy/docker-compose.local.yml up --build
+#
+# Every credential below is a published throwaway. The control planes
+# refuse these values outside ASPNETCORE_ENVIRONMENT=Development, so this
+# file cannot become a deployment by accident. Override any of them from
+# the environment (or an --env-file) when you want real ones - see
+# deploy/README.md for the one-liners that mint them.
+#
+# Ports live in the 84xx block so nothing here collides with a munni stack
+# (80xx prod, 81xx staging, 82xx iac) running on the same machine.
+name: connectors-local
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-localtest}
+      POSTGRES_DB: postgres
+      # Read by initdb/01-create-databases.sql, which creates one database
+      # and one role per service and revokes cross-access between them.
+      BANK_DB_PASSWORD: ${BANK_DB_PASSWORD:-localtest}
+      SHOP_DB_PASSWORD: ${SHOP_DB_PASSWORD:-localtest}
+    ports:
+      # Published locally so a psql client or an IDE can look inside. The
+      # production file deliberately does not do this.
+      - "8432:5432"
+    volumes:
+      - pgdata_local:/var/lib/postgresql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [data]
+
+  bank-api:
+    build:
+      context: ..
+      dockerfile: bank-connector/src/BankConnector.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      Service__Kind: bank
+      ConnectionStrings__Db: Host=postgres;Database=bank_connector;Username=bank_connector;Password=${BANK_DB_PASSWORD:-localtest}
+      Db__AutoMigrate: "true"
+      # Dev auth: none of the four production layers (network isolation,
+      # mTLS, M2M JWT, per-agent tokens) are in force. The host refuses
+      # this mode unless the environment is Development.
+      Auth__Mode: dev
+      Auth__Audience: connector.bank
+      # A fixed kid so bundles minted before a restart still open after it.
+      Bundle__CurrentKid: dev
+      Bundle__Keys__dev: ${BANK_BUNDLE_SEAL_KEY:-YmFuay1jb25uZWN0b3ItZGV2LWJ1bmRsZS1rZXktMDE=}
+      Agents__EnrollmentHmacKey: ${BANK_AGENT_ENROLLMENT_HMAC:-YmFuay1jb25uZWN0b3ItZGV2LWFnZW50LWhtYWMtMDE=}
+      # Dev-only shortcut so the agent below can enrol unattended. Ignored
+      # outside Development; in every real stack an enrollment code is
+      # minted per agent, single-use, and expires.
+      Agents__DevEnrollmentCode: ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
+      # Empty = webhooks off. There is no consumer to notify locally, and a
+      # webhook that fails every 30 seconds only teaches you to ignore logs.
+      Webhook__Url: ${CONSUMER_WEBHOOK_URL:-}
+      Webhook__SigningKey: ${BANK_WEBHOOK_SIGNING_KEY:-YmFuay1jb25uZWN0b3ItZGV2LXdlYmhvb2sta2V5MDE=}
+      Features__RawPayloadDebug: "false"
+      Features__Vault: "false"
+      BUILD_NUMBER: local
+    ports:
+      - "8410:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/v1/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data, mesh]
+
+  shop-api:
+    build:
+      context: ..
+      dockerfile: shop-connector/src/ShopConnector.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      Service__Kind: store
+      ConnectionStrings__Db: Host=postgres;Database=shop_connector;Username=shop_connector;Password=${SHOP_DB_PASSWORD:-localtest}
+      Db__AutoMigrate: "true"
+      Auth__Mode: dev
+      Auth__Audience: connector.shop
+      Bundle__CurrentKid: dev
+      Bundle__Keys__dev: ${SHOP_BUNDLE_SEAL_KEY:-c2hvcC1jb25uZWN0b3ItZGV2LWJ1bmRsZS1rZXktMDE=}
+      Agents__EnrollmentHmacKey: ${SHOP_AGENT_ENROLLMENT_HMAC:-c2hvcC1jb25uZWN0b3ItZGV2LWFnZW50LWhtYWMtMDE=}
+      Agents__DevEnrollmentCode: ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
+      Webhook__Url: ${CONSUMER_WEBHOOK_URL:-}
+      Webhook__SigningKey: ${SHOP_WEBHOOK_SIGNING_KEY:-c2hvcC1jb25uZWN0b3ItZGV2LXdlYmhvb2sta2V5MDE=}
+      Features__RawPayloadDebug: "false"
+      Features__Vault: "false"
+      BUILD_NUMBER: local
+    ports:
+      - "8420:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/v1/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data, mesh]
+
+  # The agents are on `mesh` only - never on `data`. They hold plaintext
+  # credentials for the length of a job, so the local topology mirrors the
+  # production one rather than being conveniently flat: an agent that
+  # cannot resolve postgres cannot be talked into reading it.
+  #
+  # No healthcheck: an agent listens on nothing. Its liveness is a
+  # heartbeat the control plane already tracks, visible at GET /v1/agents.
+  bank-agent:
+    build:
+      context: ..
+      dockerfile: bank-connector/src/BankConnector.Agent/Dockerfile
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      Agent__Name: local-bank
+      Agent__Class: pooled
+      Agent__ControlPlaneUrl: http://bank-api:8080
+      Agent__EnrollmentCode: ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
+      Agent__MaxConcurrency: "1"
+      Agent__Runtimes__0: http
+      Agent__Runtimes__1: browser_once
+      Agent__Runtimes__2: browser_interactive
+      Agent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
+      # Never 'residential' locally: claiming it would let a job that
+      # genuinely needs a residential line be routed to a laptop on a
+      # hotel wifi, or to a CI runner in a datacenter.
+      Agent__Egress__Kind: any
+    depends_on:
+      bank-api:
+        condition: service_healthy
+    volumes:
+      - bank_profiles_local:/profiles
+    networks: [mesh]
+
+  shop-agent:
+    build:
+      context: ..
+      dockerfile: shop-connector/src/ShopConnector.Agent/Dockerfile
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      Agent__Name: local-shop
+      Agent__Class: pooled
+      Agent__ControlPlaneUrl: http://shop-api:8080
+      Agent__EnrollmentCode: ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
+      Agent__MaxConcurrency: "1"
+      Agent__Runtimes__0: http
+      Agent__Runtimes__1: browser_once
+      Agent__Runtimes__2: browser_interactive
+      Agent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
+      Agent__Egress__Kind: any
+    depends_on:
+      shop-api:
+        condition: service_healthy
+    volumes:
+      - shop_profiles_local:/profiles
+    networks: [mesh]
+
+networks:
+  # Postgres and the two control planes. Not marked internal here (unlike
+  # production) purely so the published 8432 works for a local client.
+  data:
+  # Control planes and agents. Agents need real egress to reach providers.
+  mesh:
+
+volumes:
+  pgdata_local:
+  # T4 persistent browser profiles. A volume rather than a bind mount:
+  # a logged-in profile is the credential, and it should be as awkward to
+  # copy off the machine as a credential ought to be.
+  bank_profiles_local:
+  shop_profiles_local:

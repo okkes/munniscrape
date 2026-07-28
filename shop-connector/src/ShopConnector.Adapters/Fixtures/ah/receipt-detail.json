@@ -1,0 +1,59 @@
+{
+  "data": {
+    "posReceiptDetails": {
+      "id": "ah-2026-07-19-4711",
+      "memberId": "20260117-8842",
+      "products": [
+        {
+          "id": "wi123456",
+          "quantity": 2,
+          "name": "AH Melk halfvol 1L",
+          "price": {
+            "amount": 1.19
+          },
+          "amount": {
+            "amount": 2.38
+          }
+        },
+        {
+          "id": "wi224466",
+          "quantity": 1,
+          "name": "AH Volkorenbrood heel",
+          "price": {
+            "amount": 1.89
+          },
+          "amount": {
+            "amount": 1.89
+          }
+        },
+        {
+          "id": "wi330099",
+          "quantity": 1.2,
+          "name": "Bananen los",
+          "price": {
+            "amount": 1.99
+          },
+          "amount": {
+            "amount": 2.39
+          }
+        }
+      ],
+      "discounts": [
+        {
+          "name": "BONUS 2e halve prijs",
+          "amount": {
+            "amount": -0.3
+          }
+        }
+      ],
+      "payments": [
+        {
+          "method": "MAESTRO",
+          "amount": {
+            "amount": 6.36
+          }
+        }
+      ]
+    }
+  }
+}

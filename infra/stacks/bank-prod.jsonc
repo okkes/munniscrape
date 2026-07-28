@@ -1,0 +1,123 @@
+// bank-prod — the Bank Connector, production.
+//
+// One stack file is the whole description of a deployment: hosts, ports,
+// exposure, agent pool, feature flags. The renderer turns it into a
+// compose file, an env file and a runbook; nothing about a stack is
+// configured anywhere else, and nothing here is a secret (see
+// ../secrets.manifest.json for those).
+{
+  "stack": "bank-prod",
+  "service": "bank",
+  "role": "prod",
+
+  // Image tag channel. master -> latest, dev -> dev; the manifest job in
+  // release-images.yml mints both from the per-arch builds.
+  "channel": "latest",
+
+  // Where every secret and variable for this stack lives. A missing one
+  // fails CI rather than producing a misconfigured image or a service
+  // that boots with a default nobody chose.
+  "githubEnvironment": "bank-production",
+
+  "domain": "${CONNECTOR_DOMAIN}",
+
+  // Neutral hostname on purpose. The quarantine argument dies the moment
+  // a connector's domain advertises both the parent app and the
+  // technique, so neither "munni" nor "scrape" appears in it.
+  "hosts": { "api": "ledgerbridge" },
+
+  // 83xx block: clear of munni (80xx prod, 81xx staging, 82xx iac) and of
+  // the 84xx local block in deploy/docker-compose.local.yml.
+  "ports": { "api": 8390 },
+
+  "registry": "ghcr.io/okkes",
+  "images": {
+    "api": "bank-connector-api",
+    // The only image with browser binaries, and the only one that ever
+    // holds a plaintext credential. It never gets a database credential.
+    "agent": "bank-connector-agent"
+  },
+
+  "network": {
+    // Not published to the internet at all. The control plane terminates
+    // TLS itself and pins the consumer's client certificate, so the LAN
+    // is not treated as a trust boundary either.
+    "exposure": "lan-only",
+    "bindAddress": "${LAN_BIND_IP}",
+    "allowFrom": ["munni-api"],
+    // No DSM reverse-proxy entry: the consumer reaches the control plane
+    // on the shared docker network, and an off-NAS consumer comes in over
+    // WireGuard/Tailscale rather than through nginx.
+    "reverseProxy": false
+  },
+
+  "database": {
+    // Shared instance with shop-prod, separate database and separate
+    // role, cross-connect revoked (deploy/initdb/01-create-databases.sql).
+    // Separate instances are the next step and cost only a container.
+    "instance": "shared",
+    "name": "bank_connector",
+    "role": "bank_connector",
+    // Deliberately not published: `docker compose exec postgres psql` is
+    // one command, and a database port on a LAN buys nothing.
+    "published": false
+  },
+
+  "bundle": {
+    "currentKid": "k1",
+    // Web clients get a short-lived bundle whatever the provider's TTL
+    // says, because a browser has no encryption at rest we control.
+    "webTtlSecondsCap": 3600
+  },
+
+  "agents": {
+    "pooled": [
+      {
+        "name": "nas-http",
+        "host": "nas",
+        "runtimes": ["http"],
+        // No browser, so the NAS's shared egress address is not a problem.
+        "egress": { "country": "NL", "kind": "any" },
+        "replicas": 1
+      },
+      {
+        "name": "home-browser",
+        // NOT the NAS. A bank login from a datacenter-shaped address is a
+        // fraud signal before the credentials are even considered.
+        "host": "residential-box",
+        "runtimes": ["browser_once", "browser_interactive"],
+        "egress": { "country": "NL", "kind": "residential" },
+        "replicas": 1
+      }
+    ],
+    // browser_persistent (ASN edge login) is BYO-only by design: a
+    // permanently logged-in bank profile belongs on hardware the user
+    // owns, not on ours.
+    "byoEnrollment": true
+  },
+
+  // Staged rows are purged on ack; these are the backstops for when the
+  // consumer never acks. A connector is a pipe, and these numbers are
+  // what keep it one.
+  "retention": {
+    "stagedDataDays": 7,
+    "failureArtifactHours": 72,
+    "rawPayloadHours": 24
+  },
+
+  "features": {
+    "telemetry": true,
+    // Raw provider payloads are a debugging aid and a liability. Never on
+    // in production, for anyone, without a deliberate temporary decision.
+    "rawPayloadDebug": false,
+    // server custody. Off until a provider both needs it and can actually
+    // run unattended; storing a secret that needs a human to use it buys
+    // risk and no feature.
+    "vault": false,
+    "mockProvidersOnly": false,
+    // Scheduled runs against dedicated test accounts. The difference
+    // between "we knew" and "users told us".
+    "canaries": true,
+    "webhooks": true
+  }
+}

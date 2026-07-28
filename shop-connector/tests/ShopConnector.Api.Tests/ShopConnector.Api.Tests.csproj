@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Integration tests for the shopping control plane, driven through the real
+    ShopConnector.Api host: WebApplicationFactory boots Program.cs itself, so
+    what is under test is the composition a container runs, not a re-creation
+    of it in a test fixture.
+  -->
+  <PropertyGroup>
+    <RootNamespace>ShopConnector.Api.Tests</RootNamespace>
+    <AssemblyName>ShopConnector.Api.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShopConnector.Api\ShopConnector.Api.csproj" />
+  </ItemGroup>
+
+</Project>

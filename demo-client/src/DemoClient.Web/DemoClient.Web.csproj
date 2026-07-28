@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    munni's relay, as a runnable reference implementation.
+
+    It references no connector project, and that is the point rather than an
+    oversight: the relay talks HTTP and nothing else, exactly as Munni.Api
+    will. A ProjectReference here would let a wire-contract mistake compile
+    cleanly against types it should never have seen, which is precisely the
+    class of bug this demo exists to catch.
+
+    No packages either. Everything used is in Microsoft.AspNetCore.App, so the
+    whole toolchain is `dotnet run` - and the front end is plain HTML plus ES
+    modules served from wwwroot, so there is no second one.
+  -->
+  <PropertyGroup>
+    <RootNamespace>DemoClient.Web</RootNamespace>
+    <AssemblyName>DemoClient.Web</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Same reasoning as the connectors: development settings reach bin/ for a
+      local `dotnet run` and never reach an image. A development configuration
+      inside a deployed container is how a relay ends up pointing at localhost
+      and looking perfectly healthy doing it.
+    -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+</Project>

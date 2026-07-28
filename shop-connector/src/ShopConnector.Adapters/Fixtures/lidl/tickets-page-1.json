@@ -1,0 +1,23 @@
+{
+  "tickets": [
+    {
+      "id": "lidl-2026-07-18-8801",
+      "date": "2026-07-18T18:04:00",
+      "totalAmount": "14,27",
+      "storeName": "Lidl Utrecht Kanaleneiland",
+      "isFavorite": false,
+      "hasReturnedItems": false
+    },
+    {
+      "id": "lidl-2026-07-05-8720",
+      "date": "2026-07-05T11:22:00",
+      "totalAmount": "8,45",
+      "storeName": "Lidl Utrecht Kanaleneiland",
+      "isFavorite": false,
+      "hasReturnedItems": false
+    }
+  ],
+  "page": 1,
+  "size": 2,
+  "totalCount": 2
+}

@@ -1,0 +1,88 @@
+// shop-prod — the Shopping Connector, production.
+//
+// Same shape as bank-prod, separate everything: separate image, separate
+// database and role, separate GitHub Environment, separate hostname,
+// separate mTLS client cert, separate subject salt. A supermarket dispute
+// and a bank incident must not be able to reach each other.
+{
+  "stack": "shop-prod",
+  "service": "shop",
+  "role": "prod",
+
+  "channel": "latest",
+  "githubEnvironment": "shop-production",
+
+  "domain": "${CONNECTOR_DOMAIN}",
+  "hosts": { "api": "basketbridge" },
+  "ports": { "api": 8391 },
+
+  "registry": "ghcr.io/okkes",
+  "images": {
+    "api": "shop-connector-api",
+    "agent": "shop-connector-agent"
+  },
+
+  "network": {
+    "exposure": "lan-only",
+    "bindAddress": "${LAN_BIND_IP}",
+    "allowFrom": ["munni-api"],
+    "reverseProxy": false
+  },
+
+  "database": {
+    "instance": "shared",
+    "name": "shop_connector",
+    "role": "shop_connector",
+    "published": false
+  },
+
+  "bundle": {
+    "currentKid": "k1",
+    "webTtlSecondsCap": 3600
+  },
+
+  "agents": {
+    "pooled": [
+      {
+        // Albert Heijn is T1 and runs inline in the control plane, so this
+        // pool exists for the http-tier providers that still want their
+        // traffic off the control plane's process.
+        "name": "nas-http",
+        "host": "nas",
+        "runtimes": ["http"],
+        "egress": { "country": "NL", "kind": "any" },
+        "replicas": 1
+      },
+      {
+        // The load-bearing one. All three retail providers require a real
+        // browser on a plausible address for login, and a datacenter range
+        // fails that test before credentials are considered. Same box as
+        // the bank connector's browser agent is fine; the NAS is not.
+        "name": "home-browser",
+        "host": "residential-box",
+        "runtimes": ["browser_once", "browser_interactive"],
+        "egress": { "country": "NL", "kind": "residential" },
+        "replicas": 1
+      }
+    ],
+    // Jumbo has a ~24h session and no refresh path, which makes a
+    // persistent BYO profile the difference between a daily login and an
+    // always-on connection.
+    "byoEnrollment": true
+  },
+
+  "retention": {
+    "stagedDataDays": 7,
+    "failureArtifactHours": 72,
+    "rawPayloadHours": 24
+  },
+
+  "features": {
+    "telemetry": true,
+    "rawPayloadDebug": false,
+    "vault": false,
+    "mockProvidersOnly": false,
+    "canaries": true,
+    "webhooks": true
+  }
+}

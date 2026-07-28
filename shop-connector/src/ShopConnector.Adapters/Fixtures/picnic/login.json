@@ -1,0 +1,5 @@
+{
+  "user_id": "111-222-3333",
+  "second_factor_authentication_required": false,
+  "show_second_factor_authentication_intro": false
+}

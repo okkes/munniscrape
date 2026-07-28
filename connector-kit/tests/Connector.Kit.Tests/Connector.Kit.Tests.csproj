@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The invariants the whole platform's safety rests on.
+
+    Everything here is offline and deterministic: no clock, no network, no
+    database, no browser. A suite that needs any of those cannot be run on
+    the change that breaks the retry rule, and the retry rule is the one
+    bug that locks a real bank account.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Connector.Kit.Tests</RootNamespace>
+    <AssemblyName>Connector.Kit.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Connector.Kit\Connector.Kit.csproj" />
+    <!--
+      Both adapter fleets are referenced for one reason: ManifestValidator
+      is only worth anything if the manifests actually shipped pass it. A
+      validator tested solely against manifests written by its own test is
+      a validator that agrees with itself.
+    -->
+    <ProjectReference Include="..\..\..\bank-connector\src\BankConnector.Adapters\BankConnector.Adapters.csproj" />
+    <ProjectReference Include="..\..\..\shop-connector\src\ShopConnector.Adapters\ShopConnector.Adapters.csproj" />
+  </ItemGroup>
+
+</Project>

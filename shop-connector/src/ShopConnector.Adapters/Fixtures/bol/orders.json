@@ -1,0 +1,65 @@
+{
+  "_comment": [
+    "SYNTHETIC. This is NOT a capture, and no JSON order endpoint has been identified",
+    "for bol.com's consumer site at all - the research looked and found only seller-API",
+    "clients. It holds exactly the same three orders as orders-page.html so the suite can",
+    "assert the two shapes normalize identically, which is the only property worth having",
+    "while nobody knows which of them bol actually serves.",
+    "",
+    "Amounts are written as Dutch comma strings AND as plain decimals, mixed on purpose:",
+    "BolOptions.JsonAmountUnit is MajorString, which reads both as euros. What it would",
+    "read wrongly is minor units - 1250 meaning 12,50 - and that is the first thing a live",
+    "run has to check."
+  ],
+  "orders": [
+    {
+      "orderId": "4001234567",
+      "orderDate": "2026-06-14T10:32:00+02:00",
+      "totalAmount": "54,97",
+      "currency": "EUR",
+      "seller": { "displayName": "bol.com" },
+      "payment": { "type": "iDEAL" },
+      "orderItems": [
+        {
+          "title": "Philips Hue White E27 - 2-pack",
+          "quantity": 2,
+          "unitPrice": "19,99",
+          "totalPrice": "39,98"
+        },
+        {
+          "title": "USB-C kabel 2 m",
+          "quantity": 1,
+          "unitPrice": "17,99",
+          "totalPrice": "17,99",
+          "discount": { "amount": "3,00", "description": "2e halve prijs" }
+        }
+      ]
+    },
+    {
+      "orderId": "4001199887",
+      "orderDate": "3 maart 2026 om 21:48",
+      "totalAmount": 1249.00,
+      "seller": "TechDeal Nederland B.V.",
+      "payment": { "type": "Achteraf betalen" },
+      "orderItems": [
+        {
+          "title": "Espressomachine De Luxe",
+          "quantity": 1,
+          "unitPrice": 1249.00,
+          "totalPrice": 1249.00
+        }
+      ]
+    },
+    {
+      "orderId": "4000998877",
+      "orderDate": "2025-12-24T08:05:00+01:00",
+      "totalAmount": "32,94",
+      "payment": { "type": "Creditcard", "maskedCardNumber": "**** **** **** 4242" },
+      "orderItems": [
+        { "title": "Kerstkaarten set van 20", "quantity": 1, "totalPrice": "12,95" },
+        { "title": "Vulpen blauw", "quantity": 1, "totalPrice": "15,00" },
+        { "title": "Bezorgd op 27 december" }
+      ]
+    }
+  ]
+}

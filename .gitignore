@@ -1,0 +1,63 @@
+# Reference material — read-only context, NEVER committed.
+# Contains a full copy of a separately managed project plus prior-art
+# source, including certificate files and local secrets.
+temp/
+
+# .NET
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userprefs
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.trx
+BenchmarkDotNet.Artifacts/
+
+# Playwright
+.playwright/
+playwright-report/
+test-results/
+**/bin/**/playwright.ps1
+
+# Node (infra tooling)
+node_modules/
+npm-debug.log*
+
+# The demo's local credential file. Real provider passwords in plaintext, for
+# one developer's machine, read only by the Development-only prefill endpoint.
+# Named at both depths so no future move of the demo project can uncover it,
+# and by prefix so a rename of the extension cannot silently un-ignore it.
+credentials.local.*
+demo-client/**/credentials.local.*
+!credentials.local.*.example
+
+# Secrets and rendered stacks — generated, never committed
+*.env
+.env
+.env.*
+!.env.example
+deploy/env/.env*
+!deploy/env/.env.example
+infra/rendered/
+*.pfx
+*.p12
+*.pem
+*.key
+!**/testdata/**/*.pem
+
+# Local dev state
+docker-data/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vs/
+.idea/
+*.swp
+.DS_Store

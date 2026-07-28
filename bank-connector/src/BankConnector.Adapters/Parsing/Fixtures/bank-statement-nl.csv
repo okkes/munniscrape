@@ -1,0 +1,6 @@
+"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"Mededelingen";"Saldo na mutatie"
+"02-06-2026";"WONINGSTICHTING DE KLEINE";"NL18ASNB0123456789";"NL22RABO0123409876";"IC";"Af";"1.425,00";"Huur juni 2026";"417,30"
+"05-06-2026";"JUMBO 1234 UTRECHT";"NL18ASNB0123456789";"";"BA";"Af";"42,31";"Betaalautomaat 05-06-2026 17:42";"374,99"
+"11-06-2026";"VERZAMELBOEKING";"NL18ASNB0123456789";"";"BA";"Af";"18,90";"Verzamelboeking 2 betalingen";"356,09"
+"24-06-2026";"MOCK EMPLOYER BV";"NL18ASNB0123456789";"NL44INGB0009876543";"OV";"Bij";"2.850,00";"Salaris juni 2026 periode 06";"3.206,09"
+"28-06-2026";"NS REIZIGERS";"NL18ASNB0123456789";"";"BA";"Af";"12,40";"Betaalautomaat 28-06-2026 08:11";"3.193,69"

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Connector demo client</title>
+  <meta name="description"
+    content="A reference consumer for the connector platform: manifest-driven login, relayed challenges, ephemeral web custody.">
+  <!-- Inline, because this page is offline-complete: no CDN, no font host, no framework. -->
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#128268;</text></svg>">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <h1>Connector demo client</h1>
+        <p class="topbar-sub">
+          A reference consumer. The browser talks only to <code>/api/*</code> &mdash; this page never learns a
+          connector hostname, never holds a connector credential, and never sees a resume ticket.
+        </p>
+      </div>
+      <div class="topbar-chips">
+        <span class="badge badge-custody">device class: web</span>
+        <span class="badge badge-neutral">custody: ephemeral</span>
+      </div>
+    </div>
+
+    <nav class="tabs" role="tablist" aria-label="Screens">
+      <button class="tab is-active" data-tab="providers" role="tab" aria-selected="true">Providers</button>
+      <button class="tab" data-tab="connect" role="tab" aria-selected="false">Connect</button>
+      <button class="tab" data-tab="login" role="tab" aria-selected="false">Live login</button>
+      <button class="tab" data-tab="connections" role="tab" aria-selected="false">Connections</button>
+      <button class="tab" data-tab="data" role="tab" aria-selected="false">Data</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="screen" data-screen="providers">
+      <h2>Providers</h2>
+      <p class="lede">
+        Everything on these cards came out of the provider manifest, which is the only contract this app codes
+        against. <strong>Status is part of it</strong>: a provider that is not healthy says so here and refuses to be
+        connected, instead of failing halfway through a login.
+      </p>
+      <div id="providers-body"></div>
+    </section>
+
+    <section class="screen" data-screen="connect" hidden>
+      <h2>Connect</h2>
+      <p class="lede">
+        The form below is <strong>generated</strong> &mdash; <code>auth.config</code> first, then each
+        <code>auth.step</code> in order, honouring every field's type, pattern, autofill hint and label key. There is
+        no provider-specific code anywhere in this app, which is the point: adding a provider to a connector needs
+        zero changes here.
+      </p>
+      <div id="connect-body"></div>
+    </section>
+
+    <section class="screen" data-screen="login" hidden>
+      <h2>Live login</h2>
+      <p class="lede">
+        Progress is a closed enum, not a status string, so it can be rendered as a trail and translated. Challenges
+        are <strong>relayed, never solved</strong>: the question goes to the person who owns the account and their
+        answer goes back. Every challenge counts down to its expiry and stops accepting input at zero.
+      </p>
+      <div id="login-body"></div>
+    </section>
+
+    <section class="screen" data-screen="connections" hidden>
+      <h2>Connections</h2>
+      <p class="lede">
+        Sealed bundles live in <code>sessionStorage</code> and nowhere else. That is the web custody rule: the bundle
+        dies with the tab and you sign in again next visit. It is not a bug and the UI should never let it look like
+        one.
+      </p>
+      <div id="connections-body"></div>
+    </section>
+
+    <section class="screen" data-screen="data" hidden>
+      <h2>Data</h2>
+      <p class="lede">
+        The fetch form is built from the resource's <code>params</code>. Results are rendered by <em>shape</em> &mdash;
+        a receipt is a receipt whatever provider it came from. A fetch that does not finish in its window comes back
+        as a job, which may itself stop to ask a question.
+      </p>
+      <div id="data-body"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>
+      Relay endpoints in use:
+      <code>/api/services</code>, <code>/api/{service}/providers</code>, <code>/api/{service}/agents</code>,
+      <code>/api/{service}/{provider}/login</code> (+ <code>/events</code>, <code>/answer</code>,
+      <code>/challenges/{id}/image</code>), <code>/api/{service}/{provider}/{resource}/fetch</code>,
+      <code>/api/{service}/{provider}/jobs/{id}</code>, <code>/api/{service}/{provider}/{resource}/ack</code>,
+      <code>/api/{service}/{provider}/sessions/{id}</code>, <code>/api/prefill/{service}/{provider}</code>.
+    </p>
+    <p>
+      Unmapped copy keys render <code class="copy-missing">like this</code> on purpose: a missing translation must
+      look like a bug, because it is one.
+    </p>
+  </footer>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+
+</html>

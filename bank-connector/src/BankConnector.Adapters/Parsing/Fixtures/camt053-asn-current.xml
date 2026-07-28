@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dialect: camt.053.001.08, and a much sparser bank.
+
+  Deliberately exercises everything the ING fixture does not:
+    - a different namespace (version) for the same element names
+    - no Acct/Ccy and no Acct/Nm, so the currency has to come off Ntry/Amt
+    - NtryRef instead of AcctSvcrRef
+    - proprietary Dutch mutation codes instead of the ISO BkTxCd tree
+    - AddtlNtryInf instead of RmtInf/Ustrd
+    - one batched entry with two TxDtls, which has no single counterparty
+    - one entry with no ValDt at all
+
+  OPBD 1842.30 + entries 1351.39 = CLBD 3193.69. The same statement is
+  restated in bank-statement-nl.csv and bank-statement-en.csv.
+-->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>ASN20260701T041200</MsgId>
+      <CreDtTm>2026-07-01T04:12:00Z</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>0000006</Id>
+      <CreDtTm>2026-07-01T04:12:00Z</CreDtTm>
+      <Acct>
+        <Id>
+          <IBAN>NL18ASNB0123456789</IBAN>
+        </Id>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="EUR">1842.30</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-06-01</Dt>
+        </Dt>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="EUR">3193.69</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <DtTm>2026-06-30T23:59:59Z</DtTm>
+        </Dt>
+      </Bal>
+      <Ntry>
+        <NtryRef>0000006-001</NtryRef>
+        <Amt Ccy="EUR">1425.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <Dt>2026-06-02</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-06-02</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>IC</Cd>
+            <Issr>ASNB</Issr>
+          </Prtry>
+        </BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr>
+                <Pty>
+                  <Nm>WONINGSTICHTING DE KLEINE</Nm>
+                </Pty>
+              </Cdtr>
+              <CdtrAcct>
+                <Id>
+                  <IBAN>NL22RABO0123409876</IBAN>
+                </Id>
+              </CdtrAcct>
+            </RltdPties>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Huur juni 2026</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <NtryRef>0000006-002</NtryRef>
+        <Amt Ccy="EUR">42.31</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <Dt>2026-06-05</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-06-05</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>BA</Cd>
+            <Issr>ASNB</Issr>
+          </Prtry>
+        </BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr>
+                <Nm>JUMBO 1234 UTRECHT</Nm>
+              </Cdtr>
+            </RltdPties>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Betaalautomaat 05-06-2026 17:42</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <NtryRef>0000006-003</NtryRef>
+        <Amt Ccy="EUR">18.90</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <Dt>2026-06-11</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-06-11</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>BA</Cd>
+            <Issr>ASNB</Issr>
+          </Prtry>
+        </BkTxCd>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>2</NbOfTxs>
+          </Btch>
+          <TxDtls>
+            <Amt Ccy="EUR">12.40</Amt>
+            <RltdPties>
+              <Cdtr>
+                <Nm>ALBERT HEIJN 8891</Nm>
+              </Cdtr>
+            </RltdPties>
+          </TxDtls>
+          <TxDtls>
+            <Amt Ccy="EUR">6.50</Amt>
+            <RltdPties>
+              <Cdtr>
+                <Nm>BAKKERIJ VAN DIJK</Nm>
+              </Cdtr>
+            </RltdPties>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Verzamelboeking 2 betalingen</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <NtryRef>0000006-004</NtryRef>
+        <Amt Ccy="EUR">2850.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <Dt>2026-06-24</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-06-24</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>OV</Cd>
+            <Issr>ASNB</Issr>
+          </Prtry>
+        </BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>MOCK EMPLOYER BV</Nm>
+              </Dbtr>
+              <DbtrAcct>
+                <Id>
+                  <IBAN>NL44INGB0009876543</IBAN>
+                </Id>
+              </DbtrAcct>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Salaris juni 2026</Ustrd>
+              <Ustrd>periode 06</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <NtryRef>0000006-005</NtryRef>
+        <Amt Ccy="EUR">12.40</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <Dt>2026-06-28</Dt>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>BA</Cd>
+            <Issr>ASNB</Issr>
+          </Prtry>
+        </BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr>
+                <Nm>NS REIZIGERS</Nm>
+              </Cdtr>
+            </RltdPties>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Betaalautomaat 28-06-2026 08:11</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

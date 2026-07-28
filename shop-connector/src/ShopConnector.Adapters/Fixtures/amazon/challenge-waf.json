@@ -1,0 +1,23 @@
+{
+  "url": "https://www.amazon.nl/your-orders/orders?timeFilter=year-2026&startIndex=0",
+  "status": 200,
+  "html": [
+    "<!doctype html>",
+    "<html lang=\"en\">",
+    "<head><meta charset=\"utf-8\"><title>Human Verification</title></head>",
+    "<body>",
+    "<div id=\"root\">",
+    "  <p>Even geduld terwijl we je verzoek controleren...</p>",
+    "</div>",
+    "<script type=\"text/javascript\">",
+    "  window.gokuProps = {",
+    "    \"key\": \"AQIDAHjcYu-redacted\",",
+    "    \"iv\": \"CgAAFDIlkeQAAAAB\",",
+    "    \"context\": \"redacted-waf-context-blob\"",
+    "  };",
+    "</script>",
+    "<script src=\"https://de.captcha-sdk.awswaf.com/de/jsapi.js\" defer></script>",
+    "</body>",
+    "</html>"
+  ]
+}

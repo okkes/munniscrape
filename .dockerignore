@@ -1,0 +1,45 @@
+# Every image in this repo builds with the REPO ROOT as its context: each
+# service is a thin shell over connector-kit, which lives outside its own
+# folder. That makes this file load-bearing rather than cosmetic.
+
+# Reference material only: a full copy of a separately managed project plus
+# prior-art source, including certificate files and local secrets. It must
+# never enter a build context, let alone survive into a layer.
+temp/
+
+.git/
+.github/
+docs/
+**/*.md
+LICENSE
+
+# Host build output: stale, possibly the wrong RID, and it would shadow
+# what the SDK stage produces.
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+coverage/
+BenchmarkDotNet.Artifacts/
+
+# Rendered stacks and anything that smells like a credential. An image that
+# never contained a secret cannot leak one.
+deploy/env/
+infra/rendered/
+**/.env
+**/.env.*
+**/*.pfx
+**/*.p12
+**/*.pem
+**/*.key
+
+# Playwright browser bundles come from the agent's base image, never from a
+# developer's machine.
+.playwright/
+playwright-report/
+test-results/
+
+node_modules/
+docker-data/
+.vs/
+.idea/

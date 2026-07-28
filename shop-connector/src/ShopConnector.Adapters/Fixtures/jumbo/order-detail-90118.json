@@ -1,0 +1,50 @@
+{
+  "data": {
+    "order": {
+      "orderId": 90118,
+      "customerId": "cust-4471",
+      "deliveryDate": "2026-07-13",
+      "fulfilmentType": "COLLECTION",
+      "paymentMethod": "MAESTRO",
+      "items": [
+        {
+          "lineId": 1,
+          "sku": "108231",
+          "quantity": 2,
+          "orderedQuantity": 2,
+          "pickedQuantity": 2,
+          "unit": "PIECE",
+          "linePriceExDiscount": { "amount": "2.90", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "2.90", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "1.45", "currency": "EUR" }, "unit": "PIECE" },
+          "promotions": [],
+          "deposits": [],
+          "surcharges": [],
+          "details": { "id": "p-108231", "sku": "108231", "title": "Jumbo Volle Melk 1L" }
+        },
+        {
+          "lineId": 2,
+          "sku": "119004",
+          "quantity": 1,
+          "orderedQuantity": 1,
+          "pickedQuantity": 1,
+          "unit": "KG",
+          "linePriceExDiscount": { "amount": "9.50", "currency": "EUR" },
+          "linePriceIncDiscount": { "amount": "9.50", "currency": "EUR" },
+          "pricePerUnit": { "price": { "amount": "9.50", "currency": "EUR" }, "unit": "KG" },
+          "promotions": [],
+          "deposits": [],
+          "surcharges": [],
+          "details": { "id": "p-119004", "sku": "119004", "title": "Jumbo Elstar Appels 1kg" }
+        }
+      ],
+      "totals": {
+        "totalToPay": { "amount": "12.40", "currency": "EUR" },
+        "totalTax": { "amount": "1.02", "currency": "EUR" },
+        "itemSubtotal": { "amount": "12.40", "currency": "EUR" },
+        "itemDiscounts": { "amount": "0.00", "currency": "EUR" },
+        "orderDiscounts": { "amount": "0.00", "currency": "EUR" }
+      }
+    }
+  }
+}

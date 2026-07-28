@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The agent's execution rules, offline.
+
+    Nothing here opens a socket, starts a browser or touches a provider: the
+    control plane is a stubbed HttpMessageHandler and the adapters are written
+    in the test. The one thing these tests do use is the wall clock, in
+    hundreds of milliseconds - the behaviour under test IS a clock, and a
+    budget that suspends can only be proved by letting time pass.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Connector.Kit.Agent.Tests</RootNamespace>
+    <!-- Must match the InternalsVisibleTo in Connector.Kit.Agent.csproj. -->
+    <AssemblyName>Connector.Kit.Agent.Tests</AssemblyName>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Connector.Kit.Agent\Connector.Kit.Agent.csproj" />
+  </ItemGroup>
+
+</Project>

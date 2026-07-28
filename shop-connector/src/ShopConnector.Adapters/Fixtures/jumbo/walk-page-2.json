@@ -1,0 +1,37 @@
+{
+  "data": {
+    "storeReceipts": {
+      "totalResults": 3,
+      "pageSize": 1,
+      "currentPage": 1,
+      "receipts": [
+        {
+          "transactionId": "TX-2026-07-05-771204",
+          "purchaseEndOn": "2026-07-05T11:19:03",
+          "receiptSource": "STORE",
+          "store": {
+            "storeId": "3105",
+            "name": "Jumbo Utrecht Amsterdamsestraatweg"
+          },
+          "pointBalance": 1180
+        }
+      ]
+    },
+    "onlineOrders": {
+      "totalCount": 3,
+      "orders": [
+        {
+          "orderId": "89950",
+          "deliveryDate": "2026-07-06",
+          "fulfilmentType": "HOME_DELIVERY",
+          "status": "CLOSED",
+          "branchName": "Jumbo Utrecht Amsterdamsestraatweg",
+          "totalToPayMoneyType": {
+            "amount": "44.05",
+            "currency": "EUR"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "url": "https://www.amazon.nl/your-orders/orders?timeFilter=year-2025&startIndex=0",
+  "status": 200,
+  "html": [
+    "<!doctype html>",
+    "<html lang=\"nl-nl\" class=\"a-no-js\">",
+    "<head><meta charset=\"utf-8\"><title>Je bestellingen</title></head>",
+    "<body class=\"a-m-nl\">",
+    "<div id=\"a-page\">",
+    "<div class=\"a-container\" id=\"ordersContainer\">",
+    "  <h1 class=\"a-size-large\">Je bestellingen</h1>",
+    "  <div class=\"a-row a-spacing-base\" id=\"controlsContainer\">",
+    "    <span class=\"num-orders\">0 bestellingen</span> geplaatst in <b>2025</b>",
+    "  </div>",
+    "  <div class=\"a-box a-spacing-base a-box-normal\">",
+    "    <div class=\"a-box-inner\">",
+    "      <h2 class=\"a-size-base\">Je hebt geen bestellingen geplaatst in 2025.</h2>",
+    "      <p class=\"a-size-base\">Probeer een andere periode te kiezen.</p>",
+    "    </div>",
+    "  </div>",
+    "</div>",
+    "</div>",
+    "</body>",
+    "</html>"
+  ]
+}

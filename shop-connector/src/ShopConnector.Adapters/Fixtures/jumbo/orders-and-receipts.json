@@ -1,0 +1,76 @@
+{
+  "data": {
+    "storeReceipts": {
+      "totalResults": 2,
+      "pageSize": 10,
+      "currentPage": 0,
+      "receipts": [
+        {
+          "transactionId": "90211-2026-07-20-0001",
+          "purchaseEndOn": "2026-07-20T16:08:00",
+          "receiptSource": "ONLINE",
+          "store": {
+            "storeId": "3105",
+            "name": "Jumbo Utrecht Amsterdamsestraatweg"
+          },
+          "pointBalance": 1500
+        },
+        {
+          "transactionId": "TX-2026-07-19-778812",
+          "purchaseEndOn": "2026-07-19T17:42:11",
+          "receiptSource": "STORE",
+          "store": {
+            "storeId": "3105",
+            "name": "Jumbo Utrecht Amsterdamsestraatweg"
+          },
+          "pointBalance": 1420
+        }
+      ]
+    },
+    "onlineOrders": {
+      "totalCount": 2,
+      "orders": [
+        {
+          "orderId": "90211",
+          "customerId": "cust-4471",
+          "deliveryDate": "2026-07-20",
+          "slotStartTime": "2026-07-20T16:00:00",
+          "slotEndTime": "2026-07-20T17:00:00",
+          "cutoffTime": "2026-07-19T22:00:00",
+          "fulfilmentType": "HOME_DELIVERY",
+          "status": "CLOSED",
+          "emailAddress": "shopper@example.test",
+          "branchName": "Jumbo Utrecht Amsterdamsestraatweg",
+          "deliveryAddress": {
+            "street": "Amsterdamsestraatweg",
+            "postalCode": "3551CV",
+            "houseNumber": "641",
+            "addition": null,
+            "city": "Utrecht"
+          },
+          "totalToPayMoneyType": {
+            "amount": "31.13",
+            "currency": "EUR"
+          }
+        },
+        {
+          "orderId": "90118",
+          "customerId": "cust-4471",
+          "deliveryDate": "2026-07-13",
+          "slotStartTime": "2026-07-13T10:00:00",
+          "slotEndTime": "2026-07-13T11:00:00",
+          "cutoffTime": "2026-07-12T22:00:00",
+          "fulfilmentType": "COLLECTION",
+          "status": "CLOSED",
+          "emailAddress": "shopper@example.test",
+          "branchName": "Jumbo Utrecht Kanaleneiland",
+          "deliveryAddress": null,
+          "totalToPayMoneyType": {
+            "amount": "12.40",
+            "currency": "EUR"
+          }
+        }
+      ]
+    }
+  }
+}
