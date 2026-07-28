@@ -20,17 +20,29 @@
  * lands somewhere else once the agent maps it back. The failure is silent and
  * it is silent on exactly the devices that matter.
  *
- * THE SHADOW FIELD NEVER ACCUMULATES. It is read as a delta from `beforeinput`
- * and emptied on every `input`, so at no point is there a password sitting in
- * this document for a screenshot, an extension, a crash dump or a
- * `document.querySelector` to find. That is the whole defence against this end
- * accumulating what the other end refuses to store.
+ * THE SHADOW FIELD IS EMPTIED ON EVERY KEYSTROKE, WITH ONE EXCEPTION THAT IS
+ * WORTH STATING HONESTLY. It is read as a delta from `beforeinput` and emptied
+ * on every `input`, so ordinarily there is no password sitting in this document
+ * for a screenshot, an extension, a crash dump or a `document.querySelector` to
+ * find. That is the whole defence against this end accumulating what the other
+ * end refuses to store.
  *
- * The one thing it does hold is an IME's composition buffer, and it has to:
- * clearing the value mid-composition is how you abort a composition, and
- * composition is what Android gesture typing and iOS autocorrect are made of.
- * So the clearing waits for `compositionend` - a word, not a login - or for
- * `blur` if that never comes.
+ * The exception is an IME's composition buffer, and it is not a small one.
+ * Clearing the value mid-composition is how you ABORT a composition, and
+ * composition is what Android gesture typing and iOS autocorrect are made of -
+ * so during one, the field holds what has been typed so far. This was first
+ * written down as "a word, not a login", which is wrong: a password with no
+ * space in it is a single composition, so the bound is the whole credential,
+ * resident until the composition ends.
+ *
+ * What is true is that every way a composition can END empties it, and there
+ * are more of those than there look to be. `compositionend` is the ordinary
+ * one. `blur` is NOT sufficient on its own - the stage's pointerdown calls
+ * preventDefault precisely so focus does not move, so tapping the picture
+ * mid-word fires no blur at all - which is why the pointerdown handler, the
+ * visibility change and the disposer all flush it too. Each of those sends
+ * what was in the buffer rather than dropping it: the human typed it and meant
+ * it to arrive, and it leaves the document either way.
  *
  * OBJECT URLS ARE REVOKED EVERY FRAME. A blob URL keeps its bytes alive for the
  * life of the document, and the garbage collector may not touch them. At a
@@ -595,6 +607,12 @@ export function liveViewChallenge(challenge, ctx) {
     // it entirely. This is the same trick a canvas editor uses, and it is the
     // whole mechanism by which a keyboard appears at all.
     event.preventDefault();
+
+    // Before focus, because preventDefault above means no blur will fire and
+    // this is the commonest way a composition is abandoned: the human is
+    // half-way through a word and reaches for the page instead.
+    flushComposition();
+
     shadow.focus({ preventScroll: true });
 
     dragging = true;
@@ -690,6 +708,21 @@ export function liveViewChallenge(challenge, ctx) {
     // 'Unidentified' or nothing at all and speaks through `beforeinput`
     // instead. Reading both, and letting whichever fires first win, is why
     // Backspace works on a laptop and on a phone.
+    // Not while an IME is composing, and this is the one that matters most.
+    //
+    // A composition holds the typed text in the shadow field until
+    // `compositionend` commits it. Relaying Enter from inside one sends the
+    // key WITHOUT the text it was meant to submit: the provider's page gets a
+    // sign-in with an empty password box while the password is still sitting
+    // in a buffer on this side. Backspace and the arrows are the same shape -
+    // the human is editing a word that has not been sent, and the key would
+    // land on whatever the page had before it.
+    //
+    // `event.isComposing` is read as well as the flag because a soft keyboard
+    // can deliver a keydown between `compositionend` and our handler running,
+    // and the two disagree for exactly that one event.
+    if (composing || event.isComposing) return;
+
     const token = KEY_TOKENS[event.key];
     if (!token) return;
 
@@ -779,16 +812,28 @@ export function liveViewChallenge(challenge, ctx) {
     shadow.value = '';
   });
 
-  // The backstop on that exception. A composition abandoned because focus moved
-  // - the human tapped the picture, switched apps, or the page took focus away -
-  // may never deliver its `compositionend`, and a `composing` flag left true
-  // would leave the buffer sitting in the document for the rest of the login.
-  // Clearing unconditionally here costs nothing when the field is already empty,
-  // which is its normal state.
-  shadow.addEventListener('blur', () => {
+  // The backstop on that exception, and `blur` is NOT sufficient to be it.
+  //
+  // The obvious abandonment - the human taps the picture mid-composition - does
+  // not blur anything: the stage's own pointerdown calls preventDefault()
+  // precisely so focus stays in the shadow field, so no blur fires and the
+  // buffer survives. For a password with no space in it the whole credential is
+  // one composition, so what survives is the whole credential, sitting in the
+  // document for the rest of the login.
+  //
+  // So every path that abandons a composition goes through here, and it COMMITS
+  // rather than discards. Dropping it would be safer by a hair and much worse
+  // to use: the human types their password, taps the picture, and what they
+  // typed silently never happened. Sending it is what they asked for, and it
+  // empties the field either way - which is the part that matters.
+  const flushComposition = () => {
+    const pending = shadow.value;
     composing = false;
     shadow.value = '';
-  });
+    if (pending) pushText(pending);
+  };
+
+  shadow.addEventListener('blur', flushComposition);
 
   // Belt and braces for the moment the whole feature turns on: a soft keyboard
   // that did not appear on pointerdown is one press away here, and a press on
@@ -844,6 +889,11 @@ export function liveViewChallenge(challenge, ctx) {
 
   const onVisibility = () => {
     paused = document.visibilityState === 'hidden';
+
+    // Switching away is the other abandonment that fires no blur on some
+    // mobile browsers. Nothing should be left composing in a backgrounded tab,
+    // least of all a password.
+    if (paused) flushComposition();
     // A poll that is already parked in the server's long-poll window would sit
     // there for its full duration; dropping it is what makes the pause take
     // effect now rather than in several seconds.
@@ -855,6 +905,11 @@ export function liveViewChallenge(challenge, ctx) {
   document.addEventListener('visibilitychange', onVisibility);
 
   ctx.onDispose(() => {
+    // First, so a composition open when this element leaves the page does not
+    // go with it - both because the human meant to send it and because it is
+    // the last moment anything can empty that field.
+    flushComposition();
+
     running = false;
     abort.abort();
     if (flushTimer !== null) clearTimeout(flushTimer);
