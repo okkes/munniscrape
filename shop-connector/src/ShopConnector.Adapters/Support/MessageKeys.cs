@@ -11,6 +11,14 @@ namespace ShopConnector.Adapters.Support;
 internal static class MessageKeys
 {
     public const string PasteRedirect = "connect.ah.paste_redirect";
+
+    /// <summary>
+    /// Shown above a streamed login. The consumer's own words, but they have
+    /// one job: say whose page this is and that what is typed goes to them.
+    /// Somebody is about to type a real password into what looks like a video
+    /// of a website, and being told why that is safe is part of it working.
+    /// </summary>
+    public const string LiveLogin = "connect.challenge.live_login";
     public const string SmsCode = "connect.challenge.sms_code";
     public const string Captcha = "connect.challenge.captcha";
 

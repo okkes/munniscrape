@@ -271,18 +271,28 @@ public sealed class ManifestTests
         Assert.Equal("NL", manifest.Agent.Egress.Country);
         Assert.Equal("residential", manifest.Agent.Egress.Kind);
 
-        Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
+        // The login is streamed now, so the flow says so. The agent and the
+        // Dutch residential line stay exactly as they were: the browser being
+        // driven by a human rather than by us does not change where it has to
+        // appear to be.
+        Assert.Equal(AuthFlow.RemoteBrowser, manifest.Auth.Flow);
 
-        // Image for a plain captcha, which can be photographed and typed back.
-        // AppApproval for the hCaptcha login.ah.nl is actually fronted by,
-        // which cannot: it is an interactive widget, so the human passes it in
-        // the agent's own window and the challenge exists only to ask them and
-        // wait. Redirect stays declared as the last resort. A consumer with no
-        // UI for a challenge its provider raises strands the user, so all
-        // three are declared rather than discovered.
+        // Two, and the shortness is the change. The whole page is streamed, so
+        // a captcha inside it is not a separate question needing its own
+        // relay - the human is already looking at it with a pointer on it, and
+        // so is an SMS box, an app-approval prompt, and whatever AH asks for
+        // next that nobody here has seen. Redirect stays as the last resort.
+        //
+        // A consumer with no UI for a challenge its provider raises strands
+        // the user, so these are declared rather than discovered.
+        Assert.Equal(
+            new[] { ChallengeType.LiveView, ChallengeType.Redirect },
+            manifest.Auth.Challenges);
+
+        // And the typed login still declares the three it needs, one flag away.
         Assert.Equal(
             new[] { ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.Redirect },
-            manifest.Auth.Challenges);
+            AlbertHeijnManifest.Build(liveLogin: false).Auth.Challenges);
 
         // The refresh token works headlessly, which is what makes scheduled
         // sync offerable at all.
@@ -295,15 +305,41 @@ public sealed class ManifestTests
     }
 
     [Fact]
-    public void Albert_heijn_asks_for_an_email_and_a_password_and_no_longer_for_a_paste()
+    public void Albert_heijn_asks_for_nothing_at_all_because_the_human_types_into_ahs_own_page()
     {
         var manifest = Registry.RequireManifest(AlbertHeijnAdapter.ProviderId);
-        var step = Assert.Single(manifest.Auth.Steps);
 
-        // The login contract changed, so bundles minted under version 1 must
-        // be rejected rather than reinterpreted - which is exactly what the
-        // AAD binding does with this number.
+        // The custody claim, as a property of the manifest rather than a
+        // sentence in a design document: no field means no form, no form means
+        // no credential posted to this platform, written to a job's inputs, or
+        // held anywhere by anything here. ManifestValidator refuses a
+        // remote_browser flow that declares one, so this cannot quietly regain
+        // a password box.
+        Assert.Empty(manifest.Auth.Steps);
+        Assert.Empty(manifest.Auth.AllFields());
+
+        // Nothing about the SHAPE of a bundle changed - it is still an access
+        // token and a refresh token - so the version deliberately stays at 2.
+        // Bumping it would log out every connected user to announce that a
+        // password is now typed somewhere else.
         Assert.Equal(2, manifest.ManifestVersion);
+
+        // The whole page is streamed, so a captcha inside it needs no separate
+        // relay: the human is already looking at it with a pointer on it.
+        Assert.Contains(ChallengeType.LiveView, manifest.Auth.Challenges);
+
+        // And the typed login is still there, one flag away, for the day AH
+        // changes something that breaks the streamed one.
+        var typed = AlbertHeijnManifest.Build(liveLogin: false);
+        Assert.Equal(AuthFlow.Password, typed.Auth.Flow);
+        Assert.Equal(2, Assert.Single(typed.Auth.Steps).Fields.Count);
+    }
+
+    [Fact]
+    public void The_typed_albert_heijn_login_still_asks_for_an_email_and_a_password_and_not_for_a_paste()
+    {
+        var manifest = AlbertHeijnManifest.Build(liveLogin: false);
+        var step = Assert.Single(manifest.Auth.Steps);
 
         Assert.Equal(2, step.Fields.Count);
         Assert.DoesNotContain(manifest.Auth.AllFields(), f => f.Key == "redirect_url");

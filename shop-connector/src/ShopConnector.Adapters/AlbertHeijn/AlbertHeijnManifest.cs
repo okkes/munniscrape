@@ -24,7 +24,17 @@ internal static class AlbertHeijnManifest
     /// unusable anywhere, and impossible on a phone, so the agent now types
     /// the credentials and captures the redirect itself.
     /// </summary>
-    public static ProviderManifest Build() => new()
+    /// <param name="liveLogin">
+    /// When true the manifest declares <see cref="AuthFlow.RemoteBrowser"/> and
+    /// NO fields, because the human signs in on Albert Heijn's own page
+    /// streamed to their device and this platform never sees the password.
+    ///
+    /// Built from the option rather than declared twice, so the flow, the
+    /// steps and the challenge list cannot drift apart from what the adapter
+    /// actually does - a manifest promising a password form for a login that
+    /// never asks for one is a consumer drawing two boxes nobody can fill.
+    /// </param>
+    public static ProviderManifest Build(bool liveLogin = true) => new()
     {
         Id = AlbertHeijnAdapter.ProviderId,
         Name = "Albert Heijn",
@@ -47,8 +57,13 @@ internal static class AlbertHeijnManifest
         NotesKey = MessageKeys.AhNotes,
         Auth = new AuthSpec
         {
-            Flow = AuthFlow.Password,
-            Steps =
+            Flow = liveLogin ? AuthFlow.RemoteBrowser : AuthFlow.Password,
+
+            // Empty under the live login, and the validator enforces that it
+            // stays empty: there is no form, because there is nothing for a
+            // consumer to ask. The human types their e-mail and password into
+            // Albert Heijn's own page, which they can see.
+            Steps = liveLogin ? [] :
             [
                 new AuthStep
                 {
@@ -92,7 +107,14 @@ internal static class AlbertHeijnManifest
             // Adding a challenge type does not change what a bundle means, so
             // ManifestVersion deliberately stays at 2: bumping it would
             // invalidate every live AH connection to announce a new question.
-            Challenges = [ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.Redirect],
+            //
+            // Under the live login the list is LiveView and Redirect: the
+            // whole page is streamed, so a captcha inside it needs no separate
+            // relay - the human is already looking at it and already has a
+            // pointer on it. Redirect stays as the last resort either way.
+            Challenges = liveLogin
+                ? [ChallengeType.LiveView, ChallengeType.Redirect]
+                : [ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.Redirect],
             Session = new SessionSpec { TtlSeconds = 7_776_000, Refreshable = true, RotatesOnUse = true },
             Reauth = new ReauthSpec { Cheap = true, TriggerCodes = ["session_expired"] },
         },

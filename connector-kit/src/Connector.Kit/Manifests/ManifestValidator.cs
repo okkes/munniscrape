@@ -100,6 +100,26 @@ public static partial class ManifestValidator
                 errors.Add("flow 'device_persistent' requires runtime 'browser_persistent'");
             }
         }
+        else if (auth.Flow == AuthFlow.RemoteBrowser)
+        {
+            // The inverse rule, and the reason this flow is worth having as a
+            // flow rather than a convention: a streamed login must be INCAPABLE
+            // of asking for a credential. A field here would mean a form
+            // somewhere, and a form means a password crossing the wire and
+            // resting in a job's inputs - the whole thing this exists to stop.
+            // Refusing it at boot makes that structural instead of a promise.
+            if (auth.AllFields().Any())
+            {
+                errors.Add("flow 'remote_browser' must declare no fields: the human types into the " +
+                           "provider's own page, so a field here would be a credential this platform " +
+                           "collects and then claims not to hold");
+            }
+
+            if (m.Runtime == ProviderRuntime.Http)
+            {
+                errors.Add("flow 'remote_browser' needs a browser to stream, so runtime 'http' cannot serve it");
+            }
+        }
         else if (auth.Steps.Count == 0)
         {
             errors.Add($"flow '{auth.Flow}' requires at least one auth step");

@@ -293,6 +293,30 @@ public sealed record AlbertHeijnOptions
     public int CaptchaRelayRounds { get; init; } = 4;
 
     /// <summary>
+    /// Stream Albert Heijn's own login page to the human instead of typing
+    /// their credentials into it.
+    ///
+    /// On by default, because it is the only shape of this login that works
+    /// for somebody with one device and no technical knowledge: no password
+    /// reaches this platform at all, and whatever AH asks for next - a
+    /// captcha, an SMS code, an app approval, something none of us has seen -
+    /// is answered by the person who can actually answer it, on the page that
+    /// asked for it.
+    ///
+    /// False restores the typed login and its captcha relay, which is proven
+    /// live and stays reachable for the day AH changes something here.
+    /// </summary>
+    public bool LiveLogin { get; init; } = true;
+
+    /// <summary>
+    /// How long a streamed login may stay open. Generous on purpose: it has to
+    /// cover reading an SMS, finding a password manager, and a captcha with
+    /// several rounds in it. The job's own budget is parked while a human
+    /// thinks, so this is the bound that actually applies.
+    /// </summary>
+    public int LiveLoginSeconds { get; init; } = 900;
+
+    /// <summary>
     /// How long the human has on the last-resort redirect fallback, where
     /// they finish on AH's page in their own browser. Longer than a captcha:
     /// it is a whole login, on a device they may have to go and find.

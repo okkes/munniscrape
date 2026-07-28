@@ -36,7 +36,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
     /// <summary>Short probes: the settle loop runs them on every pass.</summary>
     private const int PageProbeMs = 500;
 
-    private static readonly ProviderManifest Manifest = AlbertHeijnManifest.Build();
+    private readonly ProviderManifest Manifest;
 
     private readonly AlbertHeijnOptions _options;
     private readonly TimeProvider _time;
@@ -46,6 +46,12 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
     {
         _options = options ?? new AlbertHeijnOptions();
         _time = time ?? TimeProvider.System;
+
+        // Built from the options, so the flow the manifest declares and the
+        // login this adapter actually performs cannot drift apart. A manifest
+        // promising a password form for a login that never asks for one is a
+        // consumer drawing two boxes nobody can fill.
+        Manifest = AlbertHeijnManifest.Build(_options.LiveLogin);
 
         // The policy is shared; only the selectors and the patience are AH's.
         // Naming hCaptcha's two frames is what opts this provider into the
@@ -175,6 +181,82 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
     // ---- login -------------------------------------------------------------
 
+    /// <summary>
+    /// Albert Heijn's own login page, streamed to whoever owns the account.
+    ///
+    /// This adapter types nothing. It opens the page, starts watching for the
+    /// redirect, and raises a live view; the human signs in on the page in
+    /// front of them, meets whatever AH puts in the way - a captcha, an SMS
+    /// code, an app approval, something none of us has seen yet - and deals
+    /// with it the way they would on their own laptop. The login finishes when
+    /// the redirect arrives, and the redirect is the only thing this waits for.
+    ///
+    /// What that buys is the whole reason for it: no username and no password
+    /// are asked for, so none is posted to the connector, written to a job's
+    /// inputs, or held anywhere by anything here. The manifest declares no
+    /// fields and the validator refuses one that does.
+    ///
+    /// <see cref="IJobContext.CredentialSubmitted"/> is deliberately NOT
+    /// latched. It exists so a lost lease does not requeue a login whose
+    /// password already counted against an account, and this adapter never
+    /// submits one - the attempts are the human's own, on the provider's own
+    /// page, exactly as if they had opened ah.nl themselves. Latching here
+    /// would fail jobs permanently to protect against something that cannot
+    /// happen.
+    /// </summary>
+    private async Task<string> LiveCodeAsync(IJobContext ctx, CancellationToken ct)
+    {
+        ctx.Progress(JobStep.OpeningProvider);
+
+        var page = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
+        await page.GotoAsync(AuthorizeUrl()).ConfigureAwait(false);
+
+        // Attached before the human can touch anything. AH's redirect arrives
+        // the instant the last step passes, and a watcher attached afterwards
+        // misses the one event the whole login turns on.
+        using var watcher = new RedirectWatcher(page, _options.RedirectUri, _time);
+
+        ctx.Progress(JobStep.AwaitingHuman);
+
+        // Raised and awaited on its own: the answer to a live view is the empty
+        // one every passive challenge sends, and what actually ends this is the
+        // redirect. Whichever comes first wins - somebody who signs in without
+        // ever touching the consumer's UI again still finishes.
+        var asked = ctx.AskAsync(new Challenge
+        {
+            Type = ChallengeType.LiveView,
+            PromptKey = MessageKeys.LiveLogin,
+            ExpiresAt = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds),
+        }, ct);
+
+        var poll = TimeSpan.FromSeconds(_options.RedirectPollSeconds);
+        var deadline = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds);
+
+        while (_time.GetUtcNow() < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is { } captured)
+            {
+                // Nobody will answer the live view now, and its expiry would
+                // otherwise surface later as an unobserved failure on a job
+                // that succeeded.
+                _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+
+                ctx.Progress(JobStep.Authenticating);
+
+                return ExtractCode(captured)
+                       ?? throw ConnectorException.ProviderChanged(
+                           "ah: the callback carried no authorization code");
+            }
+
+            if (asked.IsCompleted) break;
+        }
+
+        throw ConnectorException.Blocked(
+            "ah: the live login ended without reaching the callback; the sign-in was not completed");
+    }
+
     private async Task<string> ObtainCodeAsync(IJobContext ctx, CancellationToken ct)
     {
         // The escape hatch, and the only path that starts no browser: a host
@@ -192,6 +274,8 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
             ctx.CredentialSubmitted();          // an OAuth code is single-use
             return handed;
         }
+
+        if (_options.LiveLogin) return await LiveCodeAsync(ctx, ct).ConfigureAwait(false);
 
         var username = RequiredInput(ctx, "username");
         var password = RequiredInput(ctx, "password");

@@ -42,7 +42,15 @@ public sealed class AlbertHeijnAdapterTests
     private static bool IsDetail(RecordedRequest request) =>
         request.Body?.Contains("posReceiptDetails", StringComparison.Ordinal) == true;
 
-    private static AlbertHeijnAdapter Adapter() => new(new AlbertHeijnOptions(), new FixedTimeProvider(Now));
+    /// <summary>
+    /// The TYPED login by default, because that is what almost everything in
+    /// this file describes: filling two boxes, meeting a captcha, settling.
+    /// Albert Heijn now streams its own page by default in production, and
+    /// that path asks for nothing - so a test about a missing credential has
+    /// no credential to miss. Pass true to exercise the streamed one.
+    /// </summary>
+    private static AlbertHeijnAdapter Adapter(bool liveLogin = false) =>
+        new(new AlbertHeijnOptions { LiveLogin = liveLogin }, new FixedTimeProvider(Now));
 
     // ---- the three corrections --------------------------------------------
 

@@ -70,6 +70,24 @@ public enum AuthFlow
 
     /// <summary>Authenticated once into a BYO agent's persistent profile; no login endpoint after.</summary>
     DevicePersistent,
+
+    /// <summary>
+    /// The provider's own login page, streamed to the human, driven by them.
+    ///
+    /// There is no form for a consumer to draw and no credential for one to
+    /// collect: the page is rendered in the agent's browser, photographed, and
+    /// the human's pointer and keystrokes are replayed into it. They sign in
+    /// exactly as they would on their own laptop.
+    ///
+    /// A provider declaring this MUST declare no fields at all, and the
+    /// validator refuses one that does. That refusal is the point - it is what
+    /// turns "the credential never enters the platform" from a claim in a
+    /// design document into something a manifest cannot contradict. A field
+    /// here would mean a form somewhere, and a form means a password crossing
+    /// the wire and resting in a job's inputs, which is the entire thing this
+    /// flow exists to stop.
+    /// </summary>
+    RemoteBrowser,
 }
 
 public sealed record AuthStep
