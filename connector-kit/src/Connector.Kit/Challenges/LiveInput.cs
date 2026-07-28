@@ -1,0 +1,208 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Text.Json.Serialization;
+
+namespace Connector.Kit.Challenges;
+
+/// <summary>
+/// What a human may do to a live view.
+///
+/// This is the whole vocabulary, and being able to write it out is the point.
+/// The relay it grows out of had a grammar so narrow it was a guarantee: taps
+/// were fractions in [0,1] and a terminal marker, so a compromised consumer
+/// could not express "navigate" or "read the cookies" because there were no
+/// words for either. Typing a password needs more than that, so the guarantee
+/// has to be re-made rather than assumed.
+///
+/// It is re-made in two places. HERE, by leaving out every event that names a
+/// destination: nothing in this file carries a URL, a selector, a script, or a
+/// file path, so navigation, evaluation and upload are not merely rejected -
+/// they are unsayable. And on the agent, which bounds a pointer to the streamed
+/// rectangle and refuses a key that is not in <see cref="LiveKey"/>.
+///
+/// That is weaker than the tap grammar was and it should be read as weaker. It
+/// buys back what a login actually needs and nothing beyond it.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<LiveInputKind>))]
+public enum LiveInputKind
+{
+    /// <summary>The pointer moved. Hover states and drags need it.</summary>
+    Move,
+
+    /// <summary>Primary button pressed. There is no secondary button on purpose - see the class remarks.</summary>
+    Down,
+
+    /// <summary>Primary button released.</summary>
+    Up,
+
+    /// <summary>A wheel or a swipe, in fractions of the view.</summary>
+    Scroll,
+
+    /// <summary>Printable text, typed into whatever the page has focused.</summary>
+    Text,
+
+    /// <summary>One of the named keys. Never a chord, never a modifier held down.</summary>
+    Key,
+}
+
+/// <summary>
+/// The keys a human may press. A closed set, and short deliberately.
+///
+/// Modifiers are absent and their absence is load-bearing. Playwright's
+/// <c>PressAsync</c> takes a STRING and reads "Control+o" as a chord, so a
+/// relayed key name reaching it would be a way to open a file dialog; and
+/// <c>DownAsync</c> latches a modifier that a later click would pick up, which
+/// is how Ctrl+click opens a new tab. So no relayed value is ever passed to
+/// <c>PressAsync</c> - this enum is mapped to a literal on the agent - and
+/// there is no way to hold a key down at all.
+///
+/// What is left is what filling in a form needs: move between fields, correct a
+/// mistake, submit.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<LiveKey>))]
+public enum LiveKey
+{
+    Backspace,
+    Delete,
+    Enter,
+    Tab,
+    Escape,
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    Home,
+    End,
+}
+
+/// <summary>
+/// One thing the human did, in fractions of the picture they did it to.
+///
+/// Fractions rather than pixels for the same reason the tap relay used them:
+/// the human's screen and the agent's viewport are different sizes, and a
+/// coordinate that means something on one is meaningless on the other. A
+/// fraction survives the difference, and survives the phone being rotated
+/// mid-login.
+/// </summary>
+public sealed record LiveInput
+{
+    public required LiveInputKind Kind { get; init; }
+
+    /// <summary>0 at the left edge of the picture, 1 at the right. Ignored by Text and Key.</summary>
+    public double X { get; init; }
+
+    /// <summary>0 at the top edge, 1 at the bottom. Ignored by Text and Key.</summary>
+    public double Y { get; init; }
+
+    /// <summary>
+    /// For <see cref="LiveInputKind.Text"/>: what was typed. Never logged, and
+    /// never anything but literal characters - it is delivered with Playwright's
+    /// <c>InsertText</c>, which types without interpreting a key name.
+    /// </summary>
+    public string? Text { get; init; }
+
+    /// <summary>For <see cref="LiveInputKind.Key"/>.</summary>
+    public LiveKey? Key { get; init; }
+
+    /// <summary>For <see cref="LiveInputKind.Scroll"/>: fractions of the view to travel.</summary>
+    public double DeltaY { get; init; }
+
+    /// <summary>
+    /// The consumer's own counter, so the agent can drop a duplicate and order
+    /// what arrives out of order. A stream over an unreliable phone connection
+    /// will do both.
+    /// </summary>
+    public long Sequence { get; init; }
+
+    /// <summary>
+    /// Whether this event can be delivered to a page at all, before anything
+    /// touches a browser.
+    ///
+    /// Coordinates outside the picture are refused rather than clamped: a
+    /// clamped tap is a click somewhere the human did not choose, and the whole
+    /// design rests on never doing that.
+    /// </summary>
+    public bool IsWellFormed()
+    {
+        if (Kind is LiveInputKind.Text)
+        {
+            return !string.IsNullOrEmpty(Text) && Text.Length <= MaxTextLength && !HasControlCharacters(Text);
+        }
+
+        if (Kind is LiveInputKind.Key) return Key is not null && System.Enum.IsDefined(Key.Value);
+
+        if (Kind is LiveInputKind.Scroll) return IsFraction(X) && IsFraction(Y) && double.IsFinite(DeltaY);
+
+        return IsFraction(X) && IsFraction(Y);
+    }
+
+    /// <summary>
+    /// A paste is one event, a held key is not. Long enough for a password
+    /// manager, short enough that nothing useful can be smuggled through as a
+    /// single keystroke.
+    /// </summary>
+    public const int MaxTextLength = 256;
+
+    private static bool IsFraction(double value) => double.IsFinite(value) && value is >= 0 and <= 1;
+
+    /// <summary>
+    /// Control characters are how a "typed" string becomes something else - a
+    /// newline that submits a form the human was still filling in, an escape
+    /// sequence that means something to a terminal further down a log pipeline.
+    /// Enter is available as a key and says so.
+    /// </summary>
+    private static bool HasControlCharacters(string text)
+    {
+        foreach (var ch in text)
+        {
+            if (char.IsControl(ch)) return true;
+        }
+
+        return false;
+    }
+}
+
+/// <summary>
+/// A batch, because one event per request would spend more time in HTTP
+/// headers than in the browser, and a drag is thirty moves.
+/// </summary>
+public sealed record LiveInputBatch
+{
+    /// <summary>In the order the human made them; the agent replays them in that order.</summary>
+    public IReadOnlyList<LiveInput> Events { get; init; } = [];
+
+    /// <summary>
+    /// A bound on one request, so a batch cannot become a way to keep an agent
+    /// busy indefinitely.
+    /// </summary>
+    public const int MaxEvents = 64;
+
+    public bool IsWellFormed() =>
+        Events.Count is > 0 and <= MaxEvents && Events.All(e => e.IsWellFormed());
+}
+
+/// <summary>
+/// One picture of the live view, and the shape it was taken at.
+///
+/// The size travels with the bytes because the consumer needs it to turn a tap
+/// on its own screen back into a fraction, and because a provider that
+/// re-renders at a different size mid-login would otherwise misplace every
+/// event silently.
+/// </summary>
+public sealed record LiveFrame
+{
+    /// <summary>Monotonic per session. A consumer showing frame 40 ignores 39 arriving late.</summary>
+    public required long Sequence { get; init; }
+
+    public required int Width { get; init; }
+
+    public required int Height { get; init; }
+
+    /// <summary>JPEG. Never PNG: a photograph of a rendered page is a photograph.</summary>
+    public required byte[] Bytes { get; init; }
+
+    [SuppressMessage("Design", "CA1024:Use properties where appropriate",
+        Justification = "Formats for a wire header, which is not a property of the frame.")]
+    public string ToHeaderValue() =>
+        string.Create(CultureInfo.InvariantCulture, $"{Sequence};{Width}x{Height}");
+}

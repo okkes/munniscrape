@@ -34,6 +34,29 @@ public enum ChallengeType
 
     /// <summary>The human logs in on the provider's own site and hands back the redirect.</summary>
     Redirect,
+
+    /// <summary>
+    /// The provider's own page, live, driven by the human on their own device.
+    ///
+    /// The others are one question with one answer. This is a conversation:
+    /// pictures go out many times a second and pointer and key events come
+    /// back, until the login is done or nobody is there any more. It rides the
+    /// challenge machinery anyway because everything that machinery provides -
+    /// an expiry, a parked job budget, a renderer chosen by the consumer, a
+    /// visible degradation when the consumer has never heard of it - is
+    /// exactly what this needs too.
+    ///
+    /// Passive in the same sense as <see cref="AppApproval"/>: there is no
+    /// string to type back. What ends it is the login completing, which the
+    /// adapter watches for itself.
+    ///
+    /// The reason it exists is custody. A provider served this way declares no
+    /// credential fields at all, so nothing is typed into a form of ours,
+    /// nothing is written to a job's inputs, and there is no password at rest
+    /// anywhere in the platform - the human types it into the provider's own
+    /// page, exactly as they would on their own laptop.
+    /// </summary>
+    LiveView,
 }
 
 /// <summary>
@@ -141,7 +164,7 @@ public sealed record Challenge
 
     /// <summary>True when the human types nothing and we simply wait.</summary>
     [JsonIgnore]
-    public bool IsPassive => Type is ChallengeType.AppApproval;
+    public bool IsPassive => Type is ChallengeType.AppApproval or ChallengeType.LiveView;
 }
 
 public sealed record ChallengeOption
