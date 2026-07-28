@@ -144,26 +144,52 @@ public static class EventStream
         var deadline = DateTimeOffset.UtcNow + maximum;
         string? last = null;
 
-        while (!ct.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
+        // A reader that goes away is the ordinary end of an event stream, not
+        // a failure of one. Somebody refreshes the page, closes the tab, or
+        // walks through a lift, and the next write throws.
+        //
+        // Letting that escape did real damage: the exception reached the error
+        // middleware, which tried to write a JSON envelope onto a response
+        // whose headers were long gone, and the "Headers are read-only,
+        // response has already started" that came back buried the actual
+        // cause. Observed live, mid-captcha, and it presented as the whole app
+        // hanging.
+        //
+        // Nothing is lost by returning quietly. The stream carries no state of
+        // its own - every frame is a projection of rows that are still there,
+        // and a client that comes back re-reads them.
+        try
         {
-            var state = await read(ct);
-            if (state is null) break;
-
-            var rendered = render(state);
-            if (!string.Equals(rendered, last, StringComparison.Ordinal))
+            while (!ct.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
             {
-                await Emit(http, "state", rendered, ct);
-                last = rendered;
-            }
+                var state = await read(ct);
+                if (state is null) break;
 
-            if (isFinal(state)) break;
+                var rendered = render(state);
+                if (!string.Equals(rendered, last, StringComparison.Ordinal))
+                {
+                    await Emit(http, "state", rendered, ct);
+                    last = rendered;
+                }
 
-            if (!await signals.WaitAsync(signalKey, TimeSpan.FromSeconds(5), ct))
-            {
-                // A comment frame keeps proxies and load balancers from
-                // reaping an idle stream during a two-minute bank login.
-                await Emit(http, null, null, ct);
+                if (isFinal(state)) break;
+
+                if (!await signals.WaitAsync(signalKey, TimeSpan.FromSeconds(5), ct))
+                {
+                    // A comment frame keeps proxies and load balancers from
+                    // reaping an idle stream during a two-minute bank login.
+                    await Emit(http, null, null, ct);
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // The request was aborted, or the caller's token fired.
+        }
+        catch (IOException)
+        {
+            // The socket went while a frame was half written. Kestrel's
+            // ConnectionResetException arrives as one of these.
         }
     }
 
