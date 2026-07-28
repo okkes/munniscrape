@@ -231,6 +231,11 @@ internal static class AgentApiEndpoints
                 : Results.NoContent();
         });
 
+        // The live view's agent leg, in this group and behind this group's
+        // auth: a streamed login is a job like any other, and its frames must
+        // not be reachable by anything that could not already lease it.
+        LiveEndpoints.MapAgent(agents);
+
         agents.MapPost("/jobs/{jobId}/result", async (
             HttpContext http,
             string jobId,
@@ -294,7 +299,13 @@ internal static class AgentApiEndpoints
         }
     }
 
-    private static async Task RequireLeasedAsync(ConnectorDbContext db, string jobId, string agentId, CancellationToken ct)
+    /// <summary>
+    /// The one check every job-scoped agent route makes. Internal rather than
+    /// private so the live routes call THIS one: a second copy of "is this job
+    /// yours" is a second thing to get wrong, on the surface that carries live
+    /// pixels of somebody's login page.
+    /// </summary>
+    internal static async Task RequireLeasedAsync(ConnectorDbContext db, string jobId, string agentId, CancellationToken ct)
     {
         var leased = await db.Jobs.AsNoTracking()
             .AnyAsync(j => j.Id == jobId && j.LeaseOwner == agentId, ct);

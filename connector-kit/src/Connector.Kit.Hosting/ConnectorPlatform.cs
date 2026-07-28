@@ -5,6 +5,7 @@ using Connector.Kit.Hosting.Data;
 using Connector.Kit.Hosting.Endpoints;
 using Connector.Kit.Hosting.Infrastructure;
 using Connector.Kit.Hosting.Jobs;
+using Connector.Kit.Hosting.Live;
 using Connector.Kit.Hosting.Providers;
 using Connector.Kit.Hosting.Staging;
 using Connector.Kit.Hosting.Sessions;
@@ -60,6 +61,13 @@ public static class ConnectorPlatform
             sp.GetRequiredService<IBundleKeyRing>(), sp.GetRequiredService<TimeProvider>()));
 
         services.AddSingleton<ConnectorSignals>();
+
+        // A singleton because a streamed login's frames and its input have to
+        // meet in one place, and process memory is the only place either may
+        // be: a frame written to the database would put the provider's
+        // authenticated pixels at rest in the control plane, which is the
+        // custody problem streaming exists to remove.
+        services.AddSingleton(sp => new LiveChannel(sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<ITicketStore>(sp => new InMemoryTicketStore(sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IIdempotencyStore>(sp => new InMemoryIdempotencyStore(sp.GetRequiredService<TimeProvider>()));
 
@@ -133,6 +141,7 @@ public static class ConnectorPlatform
 
         CatalogEndpoints.Map(api, app, platform);
         LoginEndpoints.Map(api, platform);
+        LiveEndpoints.MapConsumer(api);
         ResourceEndpoints.Map(api);
         JobEndpoints.Map(api);
         AgentAdminEndpoints.Map(api);

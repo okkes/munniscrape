@@ -25,6 +25,21 @@ public sealed class ConnectorSignals
     /// <summary>Any queued job appeared. Wakes every parked agent lease poll.</summary>
     public const string Queue = "queue";
 
+    /// <summary>
+    /// A newer picture of a streamed login is available.
+    ///
+    /// Its own key namespace rather than <see cref="Job"/>'s, and one per
+    /// direction, because a live view signals a few dozen times a second while
+    /// everything else on a job signals a few times a minute. Sharing a key
+    /// would wake every parked challenge poll on that job at frame rate, and
+    /// each of those wakes costs a database read - so the cheap half of the
+    /// stream would be paying for the expensive half of something else.
+    /// </summary>
+    public static string LiveFrame(string jobId) => "livef:" + jobId;
+
+    /// <summary>The human did something to a streamed login. See <see cref="LiveFrame"/> for the split.</summary>
+    public static string LiveInput(string jobId) => "livei:" + jobId;
+
     public void Signal(string key)
     {
         if (_waiters.TryRemove(key, out var waiter)) waiter.TrySetResult();

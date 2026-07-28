@@ -143,6 +143,17 @@ public sealed class ConnectorTimeouts
     /// <summary>Grace after a challenge expires before its image bytes are purged.</summary>
     public int ChallengeGraceSeconds { get; set; } = 300;
 
+    /// <summary>
+    /// How long a consumer's live-frame poll may hang before answering 204.
+    ///
+    /// Seconds rather than the agent's thirty: this leg is on somebody's phone,
+    /// and a request that hangs for half a minute is one a mobile network, a
+    /// screen lock or a backgrounded tab will kill for us at a moment we did
+    /// not choose. Short enough to reconnect cheaply, long enough that the
+    /// common case is a frame rather than a 204.
+    /// </summary>
+    public int LiveFramePollSeconds { get; set; } = 5;
+
     /// <summary>Staged rows die after this regardless of whether the caller ever acked.</summary>
     public int ResultRetentionDays { get; set; } = 7;
 

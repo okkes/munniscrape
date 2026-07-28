@@ -3,6 +3,7 @@ using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Data;
 using Connector.Kit.Hosting.Infrastructure;
 using Connector.Kit.Hosting.Jobs;
+using Connector.Kit.Hosting.Live;
 using Connector.Kit.Hosting.Sessions;
 using Connector.Kit.Hosting.Staging;
 using Connector.Kit.Hosting.Tickets;
@@ -29,6 +30,7 @@ public sealed class ExpiryService(
     IServiceScopeFactory scopes,
     ITicketStore tickets,
     IIdempotencyStore idempotency,
+    LiveChannel live,
     IOptions<ConnectorOptions> options,
     TimeProvider time,
     ILogger<ExpiryService> logger) : BackgroundService
@@ -80,6 +82,13 @@ public sealed class ExpiryService(
         await ExpireEnrollmentsAsync(db, ct);
         tickets.Sweep();
         idempotency.Sweep();
+
+        // A login abandoned mid-stream leaves a photograph of a half-filled
+        // login form in memory with nobody coming for it. The job outcome
+        // drops the channel on the paths that end a job cleanly; this is the
+        // one that closes the tab nobody told us about, and the reason the
+        // frame slot cannot be leaked by forgetting a call.
+        live.Sweep();
     }
 
     /// <summary>

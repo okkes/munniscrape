@@ -2,6 +2,7 @@ using Connector.Kit.Adapters;
 using Connector.Kit.AgentProtocol;
 using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Data;
+using Connector.Kit.Hosting.Live;
 using Connector.Kit.Hosting.Providers;
 using Connector.Kit.Hosting.Staging;
 using Connector.Kit.Hosting.Sessions;
@@ -27,6 +28,7 @@ public sealed class JobOutcomeService(
     SessionService sessions,
     ResultService results,
     ProviderStatusService providerStatus,
+    LiveChannel live,
     ILogger<JobOutcomeService> logger)
 {
     /// <summary>
@@ -104,6 +106,7 @@ public sealed class JobOutcomeService(
         await providerStatus.RecoverAsync(job.ProviderId, ct);
 
         await PurgeChallengeAnswersAsync(job.Id, ct);
+        live.Drop(job.Id);
 
         logger.LogInformation("job {JobId} ({Kind}/{Provider}) succeeded with {Count} record(s) via {Via}",
             job.Id, job.Kind, job.ProviderId, result.Accounts.Count + result.Transactions.Count + result.Receipts.Count,
@@ -142,6 +145,11 @@ public sealed class JobOutcomeService(
         if (job.State != JobState.Failed) return job;
 
         await PurgeChallengeAnswersAsync(job.Id, ct);
+
+        // The last picture of the login page goes with the run that produced
+        // it. Here rather than beside the requeue check on purpose: a job that
+        // is going to be tried again still has a human in front of it.
+        live.Drop(job.Id);
 
         var session = await db.Sessions.FirstOrDefaultAsync(s => s.Id == job.SessionId, ct);
         if (session is not null)
