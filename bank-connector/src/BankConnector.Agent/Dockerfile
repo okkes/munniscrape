@@ -50,8 +50,9 @@ FROM mcr.microsoft.com/playwright/dotnet:v1.61.0-noble
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
-    Agent__ProfileRoot=/profiles \
-    Agent__WorkRoot=/work
+    ConnectorAgent__ProfileRootDirectory=/profiles \
+    ConnectorAgent__WorkRootDirectory=/work \
+    ConnectorAgent__StateFilePath=/state/agent-state.json
 
 ARG BUILD_NUMBER=0
 ENV BUILD_NUMBER=${BUILD_NUMBER}
@@ -65,7 +66,7 @@ LABEL org.opencontainers.image.title="bank-connector-agent" \
 # the user controls. /work is scratch for a single job and is emptied when
 # it ends, including on failure: a downloaded bank statement left on disk
 # is exactly the leak this architecture exists to prevent.
-RUN mkdir -p /profiles /work /app && chown -R pwuser /profiles /work /app
+RUN mkdir -p /profiles /work /state /app && chown -R pwuser /profiles /work /state /app
 
 WORKDIR /app
 COPY --from=build --chown=pwuser /app .

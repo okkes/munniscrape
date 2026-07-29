@@ -49,10 +49,16 @@ RUN dotnet publish shop-connector/src/ShopConnector.Agent/ShopConnector.Agent.cs
 # between them fails at launch, not at build.
 FROM mcr.microsoft.com/playwright/dotnet:v1.61.0-noble
 
+# The section is ConnectorAgent and the properties are the full
+# ...Directory names. These were Agent__ProfileRoot and Agent__WorkRoot,
+# which bound to nothing: the agent silently used a home-directory default
+# while the compose file dutifully mounted volumes at /profiles and /work
+# that nothing ever wrote to.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
-    Agent__ProfileRoot=/profiles \
-    Agent__WorkRoot=/work
+    ConnectorAgent__ProfileRootDirectory=/profiles \
+    ConnectorAgent__WorkRootDirectory=/work \
+    ConnectorAgent__StateFilePath=/state/agent-state.json
 
 ARG BUILD_NUMBER=0
 ENV BUILD_NUMBER=${BUILD_NUMBER}
@@ -64,8 +70,9 @@ LABEL org.opencontainers.image.title="shop-connector-agent" \
 # /profiles is the T4 persistent-profile store and the one directory that
 # must survive a restart - it holds a logged-in browser session on hardware
 # the user controls. /work is scratch for a single job and is emptied when
-# it ends, including on failure.
-RUN mkdir -p /profiles /work /app && chown -R pwuser /profiles /work /app
+# it ends, including on failure. /state holds the enrollment: an agent that
+# loses it comes back as a stranger and needs a fresh one-time code.
+RUN mkdir -p /profiles /work /state /app && chown -R pwuser /profiles /work /state /app
 
 WORKDIR /app
 COPY --from=build --chown=pwuser /app .

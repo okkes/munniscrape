@@ -16,6 +16,34 @@
 #
 # Every ${VAR:?...} below fails the `up` rather than starting a service
 # that is quietly misconfigured.
+#
+# ── NOT RUNNABLE YET. READ THIS FIRST. ──────────────────────────────────
+#
+# This file was written ahead of the code and has never been run against
+# it. Two separate problems, and the second is the dangerous one.
+#
+# 1. Key names. The control plane binds `ConnectorOptions` from the section
+#    named `Connector` and the agent binds from `ConnectorAgent`. The names
+#    below have been corrected to match. They previously read `Bundle__`,
+#    `Auth__`, `Db__`, `Agents__` and `Agent__` and bound to NOTHING - a
+#    production stack would have come up on an ephemeral bundle key,
+#    sealing every user's credentials under a key that dies with the
+#    process, and looked healthy doing it.
+#
+# 2. Options that do not exist. These are marked NOT IMPLEMENTED below and
+#    are kept only because deleting them would erase a design decision
+#    somebody made on purpose. Nothing reads them today:
+#      Webhook__Url, Webhook__SigningKey  - no webhook sender exists
+#      Features__Vault, Vault__Kek        - server custody (B5) is unbuilt
+#      Features__RawPayloadDebug          - no such switch
+#      Db__AutoMigrate                    - migration is unconditional
+#      Auth__Mtls__CaPath                 - Kestrel is given no CA here
+#    Do not add a feature by uncommenting a variable. The variable is not
+#    the feature.
+#
+# Until both are resolved and this stack has actually been brought up
+# once, deploy/docker-compose.local.yml is the only compose file in this
+# repository known to work.
 name: connectors
 
 x-api-common: &api-common
@@ -38,11 +66,14 @@ x-api-common: &api-common
     # authenticated by a per-agent token, and an agent on a user's own
     # machine has no client certificate to present.
     Kestrel__Endpoints__Public__ClientCertificateMode: AllowCertificate
-    Db__AutoMigrate: "true"
-    Auth__Mode: production
-    Auth__Authority: ${AUTH_AUTHORITY:?set AUTH_AUTHORITY (the Logto OIDC issuer)}
-    Auth__Mtls__CaPath: /tls/ca.crt.pem
-    Auth__Mtls__AllowedFingerprints__0: ${CONSUMER_CLIENT_CERT_FINGERPRINT:?set CONSUMER_CLIENT_CERT_FINGERPRINT}
+    Connector__Mode: Production
+    Connector__Database__Provider: Postgres
+    Connector__Auth__Authority: ${AUTH_AUTHORITY:?set AUTH_AUTHORITY (the Logto OIDC issuer)}
+    Connector__Auth__ClientCertificateThumbprints__0: ${CONSUMER_CLIENT_CERT_FINGERPRINT:?set CONSUMER_CLIENT_CERT_FINGERPRINT}
+    # NOT IMPLEMENTED - nothing reads this. Kestrel is not given a CA to
+    # validate client certificates against; ClientCertificateMode above
+    # only asks for one. Pinning happens against the thumbprint allowlist.
+    # Auth__Mtls__CaPath: /tls/ca.crt.pem
     BUILD_NUMBER: ${TAG:-latest}
   volumes:
     # Server cert, its key, and the internal CA that signs the consumer's
@@ -63,8 +94,8 @@ x-agent-common: &agent-common
   # plane already tracks (GET /v1/agents).
   environment: &agent-env
     DOTNET_ENVIRONMENT: Production
-    Agent__MaxConcurrency: "1"
-    Agent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
+    ConnectorAgent__MaxConcurrency: "1"
+    ConnectorAgent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
 
 services:
   postgres:
@@ -97,27 +128,24 @@ services:
     image: ${REGISTRY:-ghcr.io/okkes}/bank-connector-api:${TAG:-latest}
     environment:
       <<: *api-env
-      Service__Kind: bank
-      ConnectionStrings__Db: Host=postgres;Database=bank_connector;Username=bank_connector;Password=${BANK_DB_PASSWORD:?set BANK_DB_PASSWORD}
-      Auth__Audience: ${BANK_M2M_AUDIENCE:?set BANK_M2M_AUDIENCE}
-      Auth__RequiredScope: connector.bank
+      # ServiceKind is set in BankConnector.Api/Program.cs, not here.
+      Connector__Database__ConnectionString: Host=postgres;Database=bank_connector;Username=bank_connector;Password=${BANK_DB_PASSWORD:?set BANK_DB_PASSWORD}
+      Connector__Auth__Audience: ${BANK_M2M_AUDIENCE:?set BANK_M2M_AUDIENCE}
       # Rotation is a kid bump: mint BUNDLE_SEAL_KEY_K2, point
       # BUNDLE_CURRENT_KID at it, and leave K1 in the ring until every
       # bundle sealed under it has passed its TTL. No mass re-login.
-      # An empty key entry is ignored by the host.
-      Bundle__CurrentKid: ${BUNDLE_CURRENT_KID:?set BUNDLE_CURRENT_KID}
-      Bundle__Keys__k1: ${BANK_BUNDLE_SEAL_KEY_K1:?set BANK_BUNDLE_SEAL_KEY_K1}
-      Bundle__Keys__k2: ${BANK_BUNDLE_SEAL_KEY_K2:-}
-      Agents__EnrollmentHmacKey: ${BANK_AGENT_ENROLLMENT_HMAC:?set BANK_AGENT_ENROLLMENT_HMAC}
-      Webhook__Url: ${BANK_WEBHOOK_URL:?set BANK_WEBHOOK_URL}
-      Webhook__SigningKey: ${BANK_WEBHOOK_SIGNING_KEY:?set BANK_WEBHOOK_SIGNING_KEY}
-      # server custody stays off until B5 turns it on deliberately; with it
-      # off the service holds no long-lived credential at all.
-      Features__Vault: ${BANK_FEATURE_VAULT:-false}
-      Vault__Kek: ${BANK_VAULT_KEK:-}
-      # Raw provider payloads are a debugging aid and a liability. Never on
-      # for a real user without an explicit, temporary decision.
-      Features__RawPayloadDebug: "false"
+      Connector__Bundle__CurrentKid: ${BUNDLE_CURRENT_KID:?set BUNDLE_CURRENT_KID}
+      Connector__Bundle__Keys__k1: ${BANK_BUNDLE_SEAL_KEY_K1:?set BANK_BUNDLE_SEAL_KEY_K1}
+      Connector__Bundle__Keys__k2: ${BANK_BUNDLE_SEAL_KEY_K2:-}
+      Connector__EnrollmentHmacKey: ${BANK_AGENT_ENROLLMENT_HMAC:?set BANK_AGENT_ENROLLMENT_HMAC}
+      # NOT IMPLEMENTED - see the header. No webhook sender, no vault, no
+      # raw-payload switch, and no Auth:RequiredScope binding exist.
+      # Auth__RequiredScope: connector.bank
+      # Webhook__Url: ${BANK_WEBHOOK_URL}
+      # Webhook__SigningKey: ${BANK_WEBHOOK_SIGNING_KEY}
+      # Features__Vault: ${BANK_FEATURE_VAULT:-false}
+      # Vault__Kek: ${BANK_VAULT_KEK:-}
+      # Features__RawPayloadDebug: "false"
     ports:
       - "${LAN_BIND_IP:?set LAN_BIND_IP (the NAS LAN address; 0.0.0.0 is not acceptable)}:8390:8443"
     depends_on:
@@ -130,19 +158,20 @@ services:
     image: ${REGISTRY:-ghcr.io/okkes}/shop-connector-api:${TAG:-latest}
     environment:
       <<: *api-env
-      Service__Kind: store
-      ConnectionStrings__Db: Host=postgres;Database=shop_connector;Username=shop_connector;Password=${SHOP_DB_PASSWORD:?set SHOP_DB_PASSWORD}
-      Auth__Audience: ${SHOP_M2M_AUDIENCE:?set SHOP_M2M_AUDIENCE}
-      Auth__RequiredScope: connector.shop
-      Bundle__CurrentKid: ${BUNDLE_CURRENT_KID:?set BUNDLE_CURRENT_KID}
-      Bundle__Keys__k1: ${SHOP_BUNDLE_SEAL_KEY_K1:?set SHOP_BUNDLE_SEAL_KEY_K1}
-      Bundle__Keys__k2: ${SHOP_BUNDLE_SEAL_KEY_K2:-}
-      Agents__EnrollmentHmacKey: ${SHOP_AGENT_ENROLLMENT_HMAC:?set SHOP_AGENT_ENROLLMENT_HMAC}
-      Webhook__Url: ${SHOP_WEBHOOK_URL:?set SHOP_WEBHOOK_URL}
-      Webhook__SigningKey: ${SHOP_WEBHOOK_SIGNING_KEY:?set SHOP_WEBHOOK_SIGNING_KEY}
-      Features__Vault: ${SHOP_FEATURE_VAULT:-false}
-      Vault__Kek: ${SHOP_VAULT_KEK:-}
-      Features__RawPayloadDebug: "false"
+      # ServiceKind is set in ShopConnector.Api/Program.cs, not here.
+      Connector__Database__ConnectionString: Host=postgres;Database=shop_connector;Username=shop_connector;Password=${SHOP_DB_PASSWORD:?set SHOP_DB_PASSWORD}
+      Connector__Auth__Audience: ${SHOP_M2M_AUDIENCE:?set SHOP_M2M_AUDIENCE}
+      Connector__Bundle__CurrentKid: ${BUNDLE_CURRENT_KID:?set BUNDLE_CURRENT_KID}
+      Connector__Bundle__Keys__k1: ${SHOP_BUNDLE_SEAL_KEY_K1:?set SHOP_BUNDLE_SEAL_KEY_K1}
+      Connector__Bundle__Keys__k2: ${SHOP_BUNDLE_SEAL_KEY_K2:-}
+      Connector__EnrollmentHmacKey: ${SHOP_AGENT_ENROLLMENT_HMAC:?set SHOP_AGENT_ENROLLMENT_HMAC}
+      # NOT IMPLEMENTED - see the header.
+      # Auth__RequiredScope: connector.shop
+      # Webhook__Url: ${SHOP_WEBHOOK_URL}
+      # Webhook__SigningKey: ${SHOP_WEBHOOK_SIGNING_KEY}
+      # Features__Vault: ${SHOP_FEATURE_VAULT:-false}
+      # Vault__Kek: ${SHOP_VAULT_KEK:-}
+      # Features__RawPayloadDebug: "false"
     ports:
       - "${LAN_BIND_IP:?set LAN_BIND_IP (the NAS LAN address; 0.0.0.0 is not acceptable)}:8391:8443"
     depends_on:
@@ -160,18 +189,21 @@ services:
     image: ${REGISTRY:-ghcr.io/okkes}/bank-connector-agent:${TAG:-latest}
     environment:
       <<: *agent-env
-      Agent__Name: nas-http-bank
-      Agent__Class: pooled
-      Agent__ControlPlaneUrl: ${BANK_CONTROL_PLANE_URL:-https://bank-api:8443}
-      Agent__Token: ${BANK_NAS_AGENT_TOKEN:?enrol the agent once, then set BANK_NAS_AGENT_TOKEN}
-      # The control plane's certificate comes from an internal CA, so the
-      # agent needs that CA to verify it. The CA certificate is public
-      # information; the key it was signed with never leaves the bootstrap.
-      Agent__ControlPlaneCaPath: /tls/ca.crt.pem
-      Agent__Runtimes__0: http
-      Agent__Egress__Kind: any
+      ConnectorAgent__AgentName: nas-http-bank
+      ConnectorAgent__Class: pooled
+      ConnectorAgent__ControlPlaneBaseUrl: ${BANK_CONTROL_PLANE_URL:-https://bank-api:8443}
+      ConnectorAgent__EnrollmentCode: ${BANK_NAS_AGENT_ENROLLMENT_CODE:?mint a code with POST /v1/agents/enrollment, then set BANK_NAS_AGENT_ENROLLMENT_CODE}
+      ConnectorAgent__Runtimes__0: http
+      ConnectorAgent__Egress__Kind: any
+      # NOT IMPLEMENTED - the agent has no option for a control-plane CA.
+      # It uses the container's trust store, so an internal CA has to be
+      # installed into the image or mounted over /etc/ssl/certs.
+      # Agent__ControlPlaneCaPath: /tls/ca.crt.pem
     volumes:
-      - ./env/tls/ca.crt.pem:/tls/ca.crt.pem:ro
+      # The enrollment. An agent that loses this comes back as a stranger
+      # and needs a fresh one-time code, which means a human present for
+      # every container recreate.
+      - bank_agent_state:/state
     depends_on:
       bank-api:
         condition: service_healthy
@@ -182,15 +214,16 @@ services:
     image: ${REGISTRY:-ghcr.io/okkes}/shop-connector-agent:${TAG:-latest}
     environment:
       <<: *agent-env
-      Agent__Name: nas-http-shop
-      Agent__Class: pooled
-      Agent__ControlPlaneUrl: ${SHOP_CONTROL_PLANE_URL:-https://shop-api:8443}
-      Agent__Token: ${SHOP_NAS_AGENT_TOKEN:?enrol the agent once, then set SHOP_NAS_AGENT_TOKEN}
-      Agent__ControlPlaneCaPath: /tls/ca.crt.pem
-      Agent__Runtimes__0: http
-      Agent__Egress__Kind: any
+      ConnectorAgent__AgentName: nas-http-shop
+      ConnectorAgent__Class: pooled
+      ConnectorAgent__ControlPlaneBaseUrl: ${SHOP_CONTROL_PLANE_URL:-https://shop-api:8443}
+      ConnectorAgent__EnrollmentCode: ${SHOP_NAS_AGENT_ENROLLMENT_CODE:?mint a code with POST /v1/agents/enrollment, then set SHOP_NAS_AGENT_ENROLLMENT_CODE}
+      ConnectorAgent__Runtimes__0: http
+      ConnectorAgent__Egress__Kind: any
+      # NOT IMPLEMENTED - see bank-agent-http above.
+      # Agent__ControlPlaneCaPath: /tls/ca.crt.pem
     volumes:
-      - ./env/tls/ca.crt.pem:/tls/ca.crt.pem:ro
+      - shop_agent_state:/state
     depends_on:
       shop-api:
         condition: service_healthy
@@ -223,3 +256,5 @@ networks:
 
 volumes:
   pgdata:
+  bank_agent_state:
+  shop_agent_state:

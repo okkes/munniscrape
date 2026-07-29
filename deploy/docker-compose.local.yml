@@ -1,20 +1,72 @@
-# Both connectors, end to end, on one machine. Clean-machine runnable:
+# The whole demo, in containers. Clean-machine runnable:
 #
 #   docker compose -f deploy/docker-compose.local.yml up --build
 #
-# Every credential below is a published throwaway. The control planes
-# refuse these values outside ASPNETCORE_ENVIRONMENT=Development, so this
-# file cannot become a deployment by accident. Override any of them from
-# the environment (or an --env-file) when you want real ones - see
-# deploy/README.md for the one-liners that mint them.
+# Then open http://localhost:8430.
 #
-# Ports live in the 84xx block so nothing here collides with a munni stack
-# (80xx prod, 81xx staging, 82xx iac) running on the same machine.
+# This replaces demo-client/run-demo.ps1, which built and ran five .NET
+# processes on the host. Nothing here touches the host toolchain.
+#
+# ── About the configuration keys ────────────────────────────────────────
+#
+# Every variable below is prefixed `Connector__`, `ConnectorAgent__` or
+# `Relay__`, and that is load-bearing rather than stylistic. The control
+# plane binds `ConnectorOptions` from the section named `Connector`
+# (ConnectorOptions.SectionName) and the agent binds
+# `ConnectorAgentOptions` from `ConnectorAgent`.
+#
+# The previous version of this file used `Bundle__`, `Auth__`, `Db__`,
+# `Agents__` and `Agent__`. Not one of them bound to anything. The stack
+# had never been run against the code as it stands: the agents would have
+# died on "ControlPlaneBaseUrl is required" and the APIs would have come up
+# on ephemeral bundle keys. Names that bind to nothing fail silently, which
+# is why they lasted.
+#
+# Every credential here is a published throwaway, and the control plane
+# refuses all of them outside Development - so this file cannot quietly
+# become a deployment.
+#
+# Ports live in the 84xx block so nothing collides with a munni stack
+# (80xx prod, 81xx staging, 82xx iac) on the same machine.
 name: connectors-local
+
+# The one-time enrollment code, shared by the control planes that seed it
+# and the agents that redeem it. Development only: ConnectorPlatform
+# refuses to start with Connector__DevEnrollmentCode set in production,
+# because a fixed reusable code written in a checked-in file is a password.
+x-dev-enrollment: &dev-enrollment ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
+
+x-agent-common: &agent-common
+  restart: unless-stopped
+  # Chromium maps its renderer heap into /dev/shm, and Docker's 64MB
+  # default is too small for a real page. The failure is not a clean error:
+  # tabs crash with SIGBUS partway through a login, which reads as a flaky
+  # provider rather than a misconfigured container.
+  shm_size: 1gb
+  # Chromium spawns a tree of helper processes per browser. Without an init
+  # to reap them, a container running many jobs accumulates zombies until
+  # it cannot fork.
+  init: true
+  environment: &agent-env
+    DOTNET_ENVIRONMENT: Development
+    ConnectorAgent__EnrollmentCode: *dev-enrollment
+    ConnectorAgent__Class: pooled
+    ConnectorAgent__Headless: "true"
+    # A phone, because the streamed login photographs this browser and
+    # shows it to somebody very likely holding one. See ConnectorAgentOptions.
+    ConnectorAgent__BrowserDevice: ${AGENT_BROWSER_DEVICE:-Pixel 5}
+    ConnectorAgent__BrowserLocale: nl-NL
+    ConnectorAgent__BrowserTimezoneId: Europe/Amsterdam
+    ConnectorAgent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
+    # Never 'residential' locally: claiming it would let a job that
+    # genuinely needs a residential line be routed to a laptop on hotel
+    # wifi, or to a CI runner in a datacenter.
+    ConnectorAgent__Egress__Kind: any
 
 services:
   postgres:
     image: postgres:18-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-localtest}
@@ -37,38 +89,32 @@ services:
       retries: 12
     networks: [data]
 
-  bank-api:
+  shop-api:
     build:
       context: ..
-      dockerfile: bank-connector/src/BankConnector.Api/Dockerfile
+      dockerfile: shop-connector/src/ShopConnector.Api/Dockerfile
+    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
-      Service__Kind: bank
-      ConnectionStrings__Db: Host=postgres;Database=bank_connector;Username=bank_connector;Password=${BANK_DB_PASSWORD:-localtest}
-      Db__AutoMigrate: "true"
-      # Dev auth: none of the four production layers (network isolation,
-      # mTLS, M2M JWT, per-agent tokens) are in force. The host refuses
-      # this mode unless the environment is Development.
-      Auth__Mode: dev
-      Auth__Audience: connector.bank
+      Connector__Mode: Development
+      Connector__Database__Provider: Postgres
+      Connector__Database__ConnectionString: Host=postgres;Database=shop_connector;Username=shop_connector;Password=${SHOP_DB_PASSWORD:-localtest}
       # A fixed kid so bundles minted before a restart still open after it.
-      Bundle__CurrentKid: dev
-      Bundle__Keys__dev: ${BANK_BUNDLE_SEAL_KEY:-YmFuay1jb25uZWN0b3ItZGV2LWJ1bmRsZS1rZXktMDE=}
-      Agents__EnrollmentHmacKey: ${BANK_AGENT_ENROLLMENT_HMAC:-YmFuay1jb25uZWN0b3ItZGV2LWFnZW50LWhtYWMtMDE=}
-      # Dev-only shortcut so the agent below can enrol unattended. Ignored
-      # outside Development; in every real stack an enrollment code is
-      # minted per agent, single-use, and expires.
-      Agents__DevEnrollmentCode: ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
-      # Empty = webhooks off. There is no consumer to notify locally, and a
-      # webhook that fails every 30 seconds only teaches you to ignore logs.
-      Webhook__Url: ${CONSUMER_WEBHOOK_URL:-}
-      Webhook__SigningKey: ${BANK_WEBHOOK_SIGNING_KEY:-YmFuay1jb25uZWN0b3ItZGV2LXdlYmhvb2sta2V5MDE=}
-      Features__RawPayloadDebug: "false"
-      Features__Vault: "false"
+      # Without this the key ring is ephemeral and every restart silently
+      # invalidates every connection the browser is still holding.
+      Connector__Bundle__CurrentKid: dev
+      Connector__Bundle__Keys__dev: ${SHOP_BUNDLE_SEAL_KEY:-c2hvcC1jb25uZWN0b3ItZGV2LWJ1bmRsZS1rZXktMDE=}
+      Connector__EnrollmentHmacKey: ${SHOP_AGENT_ENROLLMENT_HMAC:-c2hvcC1jb25uZWN0b3ItZGV2LWFnZW50LWhtYWMtMDE=}
+      Connector__DevEnrollmentCode: *dev-enrollment
+      # The local agent has to serve whoever is clicking, and an agent may
+      # otherwise only serve the subject that enrolled it. This is the
+      # operator-fleet opt-out, named explicitly rather than inferred.
+      Connector__FleetSubjects__0: dev-fleet
+      Connector__Timeouts__LiveFramePollSeconds: "5"
       BUILD_NUMBER: local
     ports:
-      - "8410:8080"
+      - "8420:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/v1/health || exit 1"]
       interval: 10s
@@ -80,29 +126,26 @@ services:
         condition: service_healthy
     networks: [data, mesh]
 
-  shop-api:
+  bank-api:
     build:
       context: ..
-      dockerfile: shop-connector/src/ShopConnector.Api/Dockerfile
+      dockerfile: bank-connector/src/BankConnector.Api/Dockerfile
+    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
-      Service__Kind: store
-      ConnectionStrings__Db: Host=postgres;Database=shop_connector;Username=shop_connector;Password=${SHOP_DB_PASSWORD:-localtest}
-      Db__AutoMigrate: "true"
-      Auth__Mode: dev
-      Auth__Audience: connector.shop
-      Bundle__CurrentKid: dev
-      Bundle__Keys__dev: ${SHOP_BUNDLE_SEAL_KEY:-c2hvcC1jb25uZWN0b3ItZGV2LWJ1bmRsZS1rZXktMDE=}
-      Agents__EnrollmentHmacKey: ${SHOP_AGENT_ENROLLMENT_HMAC:-c2hvcC1jb25uZWN0b3ItZGV2LWFnZW50LWhtYWMtMDE=}
-      Agents__DevEnrollmentCode: ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
-      Webhook__Url: ${CONSUMER_WEBHOOK_URL:-}
-      Webhook__SigningKey: ${SHOP_WEBHOOK_SIGNING_KEY:-c2hvcC1jb25uZWN0b3ItZGV2LXdlYmhvb2sta2V5MDE=}
-      Features__RawPayloadDebug: "false"
-      Features__Vault: "false"
+      Connector__Mode: Development
+      Connector__Database__Provider: Postgres
+      Connector__Database__ConnectionString: Host=postgres;Database=bank_connector;Username=bank_connector;Password=${BANK_DB_PASSWORD:-localtest}
+      Connector__Bundle__CurrentKid: dev
+      Connector__Bundle__Keys__dev: ${BANK_BUNDLE_SEAL_KEY:-YmFuay1jb25uZWN0b3ItZGV2LWJ1bmRsZS1rZXktMDE=}
+      Connector__EnrollmentHmacKey: ${BANK_AGENT_ENROLLMENT_HMAC:-YmFuay1jb25uZWN0b3ItZGV2LWFnZW50LWhtYWMtMDE=}
+      Connector__DevEnrollmentCode: *dev-enrollment
+      Connector__FleetSubjects__0: dev-fleet
+      Connector__Timeouts__LiveFramePollSeconds: "5"
       BUILD_NUMBER: local
     ports:
-      - "8420:8080"
+      - "8410:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/v1/health || exit 1"]
       interval: 10s
@@ -121,60 +164,103 @@ services:
   #
   # No healthcheck: an agent listens on nothing. Its liveness is a
   # heartbeat the control plane already tracks, visible at GET /v1/agents.
-  bank-agent:
-    build:
-      context: ..
-      dockerfile: bank-connector/src/BankConnector.Agent/Dockerfile
-    environment:
-      DOTNET_ENVIRONMENT: Development
-      Agent__Name: local-bank
-      Agent__Class: pooled
-      Agent__ControlPlaneUrl: http://bank-api:8080
-      Agent__EnrollmentCode: ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
-      Agent__MaxConcurrency: "1"
-      Agent__Runtimes__0: http
-      Agent__Runtimes__1: browser_once
-      Agent__Runtimes__2: browser_interactive
-      Agent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
-      # Never 'residential' locally: claiming it would let a job that
-      # genuinely needs a residential line be routed to a laptop on a
-      # hotel wifi, or to a CI runner in a datacenter.
-      Agent__Egress__Kind: any
-    depends_on:
-      bank-api:
-        condition: service_healthy
-    volumes:
-      - bank_profiles_local:/profiles
-    networks: [mesh]
-
   shop-agent:
+    <<: *agent-common
     build:
       context: ..
       dockerfile: shop-connector/src/ShopConnector.Agent/Dockerfile
     environment:
-      DOTNET_ENVIRONMENT: Development
-      Agent__Name: local-shop
-      Agent__Class: pooled
-      Agent__ControlPlaneUrl: http://shop-api:8080
-      Agent__EnrollmentCode: ${DEV_AGENT_ENROLLMENT_CODE:-AGNT-DEV0-LOCAL}
-      Agent__MaxConcurrency: "1"
-      Agent__Runtimes__0: http
-      Agent__Runtimes__1: browser_once
-      Agent__Runtimes__2: browser_interactive
-      Agent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
-      Agent__Egress__Kind: any
+      <<: *agent-env
+      ConnectorAgent__AgentName: local-shop
+      ConnectorAgent__ControlPlaneBaseUrl: http://shop-api:8080
+      # Three at once, so two tabs can sign in to two different shops
+      # without one waiting on the other. The control plane never
+      # serialised them; this was the only cap, and it was 1.
+      #
+      # Each concurrent job launches its OWN Playwright driver and its own
+      # Chromium (BrowserLease is per job), so this is roughly 400MB apiece.
+      # Raise it with the host's memory in mind, not optimism.
+      ConnectorAgent__MaxConcurrency: ${SHOP_AGENT_CONCURRENCY:-3}
+      ConnectorAgent__Runtimes__0: http
+      ConnectorAgent__Runtimes__1: browser_once
+      ConnectorAgent__Runtimes__2: browser_interactive
+      ConnectorAgent__Runtimes__3: browser_persistent
     depends_on:
       shop-api:
         condition: service_healthy
     volumes:
       - shop_profiles_local:/profiles
+      - shop_state_local:/state
+    networks: [mesh]
+
+  bank-agent:
+    <<: *agent-common
+    build:
+      context: ..
+      dockerfile: bank-connector/src/BankConnector.Agent/Dockerfile
+    environment:
+      <<: *agent-env
+      ConnectorAgent__AgentName: local-bank
+      ConnectorAgent__ControlPlaneBaseUrl: http://bank-api:8080
+      ConnectorAgent__MaxConcurrency: ${BANK_AGENT_CONCURRENCY:-2}
+      ConnectorAgent__Runtimes__0: http
+      ConnectorAgent__Runtimes__1: browser_once
+      ConnectorAgent__Runtimes__2: browser_interactive
+      ConnectorAgent__Runtimes__3: browser_persistent
+    depends_on:
+      bank-api:
+        condition: service_healthy
+    volumes:
+      - bank_profiles_local:/profiles
+      - bank_state_local:/state
+    networks: [mesh]
+
+  # The reference consumer. It reaches both connectors over `mesh` and is
+  # the only service a browser talks to.
+  demo-client:
+    build:
+      context: ..
+      dockerfile: demo-client/src/DemoClient.Web/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      # Container hostnames, not localhost. appsettings.Development.json
+      # holds the localhost pair for `dotnet run` and is deliberately not
+      # published into the image, so these must be supplied here.
+      Relay__Connectors__shop__BaseUrl: http://shop-api:8080
+      Relay__Connectors__bank__BaseUrl: http://bank-api:8080
+      # The two salts differ, and they must: identical salts would give
+      # both connectors the same pseudonym for the same person, which is
+      # precisely the property this demo exists to show. The relay refuses
+      # to start if they match.
+      Relay__Connectors__shop__SubjectSalt: ${SHOP_SUBJECT_SALT:-dev-subject-salt-shop-4c1f8a}
+      Relay__Connectors__bank__SubjectSalt: ${BANK_SUBJECT_SALT:-dev-subject-salt-bank-9e07b3}
+      Demo__UserId: ${DEMO_USER_ID:-demo-user}
+      BUILD_NUMBER: local
+    ports:
+      - "8430:8080"
+    healthcheck:
+      # /api/services asks both connectors for their catalogue, so a
+      # healthy demo client means the whole chain answered.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/api/services || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    depends_on:
+      shop-api:
+        condition: service_healthy
+      bank-api:
+        condition: service_healthy
     networks: [mesh]
 
 networks:
   # Postgres and the two control planes. Not marked internal here (unlike
   # production) purely so the published 8432 works for a local client.
   data:
-  # Control planes and agents. Agents need real egress to reach providers.
+  # Control planes, agents and the demo consumer. Agents need real egress
+  # to reach providers.
   mesh:
 
 volumes:
@@ -184,3 +270,7 @@ volumes:
   # copy off the machine as a credential ought to be.
   bank_profiles_local:
   shop_profiles_local:
+  # The enrollment state. Separate from the profiles so that clearing a
+  # stuck browser profile does not also make the agent a stranger.
+  bank_state_local:
+  shop_state_local:
