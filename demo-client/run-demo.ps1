@@ -1,5 +1,21 @@
 #Requires -Version 5.1
 <#
+    THE CONTAINER STACK IS USUALLY WHAT YOU WANT:
+
+        docker compose -f deploy/docker-compose.local.yml up --build
+        # then open http://localhost:8430
+
+    It runs the same five services plus Postgres, needs nothing installed
+    but Docker, and is the only way to exercise the production topology -
+    two networks, with the agents unable to resolve the database at all.
+
+    This script stays for the two things containers make harder: -Headed,
+    which shows you the browser the agent is driving, and attaching a
+    debugger to a process on the host. It builds and runs against the host
+    .NET SDK and uses Sqlite rather than Postgres.
+
+    ── what it starts ──────────────────────────────────────────────────
+
     The whole demo topology on one machine, in the order it has to come up:
 
         ShopConnector.Api   http://localhost:8420

@@ -4,11 +4,11 @@ Three files do the work:
 
 | File | Runs where | Shape |
 | --- | --- | --- |
-| `docker-compose.local.yml` | your machine | Postgres + both control planes + one agent each, dev auth, published throwaway keys |
-| `docker-compose.yml` | the Synology NAS | Postgres + both control planes + the two http-tier agents, mTLS, LAN-only |
+| `docker-compose.local.yml` | your machine | the whole demo: Postgres, both control planes, an agent each, and the demo client |
+| `docker-compose.yml` | the Synology NAS | Postgres + both control planes + the two http-tier agents, mTLS, LAN-only — **not runnable yet, read its header** |
 | `initdb/01-create-databases.sql` | first Postgres start | one database and one role per service, cross-access revoked |
 
-The browser-tier agents are not in either file. They belong on a different
+The browser-tier agents are not in the NAS file. They belong on a different
 machine — see [The residential agent](#the-residential-agent).
 
 ---
@@ -19,8 +19,12 @@ machine — see [The residential agent](#the-residential-agent).
 docker compose -f deploy/docker-compose.local.yml up --build
 ```
 
+Then open **<http://localhost:8430>**.
+
 That is the whole setup. Nothing to create first, no `.env` to copy: every
-credential in that file has a published dev default. Then:
+credential in that file has a published dev default. This replaces
+`demo-client/run-demo.ps1`, which built and ran five .NET processes on the
+host; nothing here touches the host toolchain.
 
 ```sh
 curl http://localhost:8410/v1/providers    # bank catalogue
@@ -33,7 +37,43 @@ psql "postgres://postgres:localtest@localhost:8432/bank_connector"
 | --- | --- |
 | 8410 | bank control plane |
 | 8420 | shopping control plane |
+| 8430 | demo client — the only one you open in a browser |
 | 8432 | Postgres |
+
+### Two logins at once
+
+`ConnectorAgent__MaxConcurrency` is 3 on the shop agent and 2 on the bank
+agent, so two tabs can sign in to two different providers without one
+waiting on the other. It was 1, and the control plane was never the
+bottleneck: it hands out jobs per session and will lease a second one
+immediately. The agent's own semaphore was the whole cap.
+
+Each concurrent job launches its own Playwright driver and its own Chromium
+— `BrowserLease` is constructed per job — so budget roughly 400 MB apiece
+and raise it against the host's memory rather than optimism:
+
+```sh
+SHOP_AGENT_CONCURRENCY=6 docker compose -f deploy/docker-compose.local.yml up -d
+```
+
+Prefer this to `deploy: replicas`. Replicas would need a unique
+`StateFilePath`, `ProfileRootDirectory` and `WorkRootDirectory` per
+instance — two agents sharing them share one enrollment and sweep each
+other's scratch out from under running jobs — plus a separate enrollment
+each.
+
+### Starting over
+
+The agent's enrollment lives in a volume, and so does the database. Clear
+both together:
+
+```sh
+docker compose -f deploy/docker-compose.local.yml down -v
+```
+
+`Connector__DevEnrollmentCode` is re-seeded on every control-plane start, so
+a wiped agent can always enrol again. That is development-only behaviour:
+the platform refuses to start with it set in production.
 
 The 84xx block is chosen so a munni stack (80xx production, 81xx staging,
 82xx iac) can run on the same machine untouched.

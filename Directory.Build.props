@@ -6,6 +6,19 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      NU1900 is "could not reach the vulnerability audit service", which is a
+      statement about the network rather than about this code. Promoted to an
+      error it fails every build in a container, on a plane, or during a
+      nuget.org hiccup - and the usual response to that is to switch the audit
+      off altogether, which is much worse than what it is protecting against.
+
+      Warning, not suppressed: it still shows up, so an audit that has been
+      silently unreachable for weeks is visible rather than invisible. The
+      findings themselves - NU1901 through NU1904 - are untouched and still
+      fail the build whenever the service does answer.
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1900</WarningsNotAsErrors>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <InvariantGlobalization>false</InvariantGlobalization>
