@@ -222,12 +222,22 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         // one every passive challenge sends, and what actually ends this is the
         // redirect. Whichever comes first wins - somebody who signs in without
         // ever touching the consumer's UI again still finishes.
+        // Linked so the ask can be ENDED, not merely abandoned.
+        //
+        // The first version observed this task's exception and walked away,
+        // which left the live view open for its whole window after the login
+        // had already succeeded: the shutter kept photographing, the agent
+        // stayed occupied, and the human sat looking at a frozen picture of a
+        // step they had finished. An agent runs one job at a time, so a login
+        // that never lets go wedges every later one behind it.
+        using var view = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
         var asked = ctx.AskAsync(new Challenge
         {
             Type = ChallengeType.LiveView,
             PromptKey = MessageKeys.LiveLogin,
             ExpiresAt = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds),
-        }, ct);
+        }, view.Token);
 
         var poll = TimeSpan.FromSeconds(_options.RedirectPollSeconds);
         var deadline = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds);
@@ -238,9 +248,12 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
             if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is { } captured)
             {
-                // Nobody will answer the live view now, and its expiry would
-                // otherwise surface later as an unobserved failure on a job
-                // that succeeded.
+                // The sign-in is done, so the view is over. Cancelled rather
+                // than left running: this is what stops the shutter, releases
+                // the browser and lets the job finish. Its exception is still
+                // observed, because an unobserved one on a job that SUCCEEDED
+                // is a crash report for something that went right.
+                await view.CancelAsync().ConfigureAwait(false);
                 _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
 
                 ctx.Progress(JobStep.Authenticating);
