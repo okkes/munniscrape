@@ -31,6 +31,47 @@ public sealed record ConnectorReply
 
     public string? ManifestVersion { get; init; }
 
+    /// <summary>
+    /// Response headers this relay carries through verbatim.
+    ///
+    /// A live frame is bytes plus two numbers - which frame it is and what
+    /// size it was taken at - and the numbers travel as headers because the
+    /// body is a JPEG. Dropping them turns a working stream into a picture the
+    /// consumer cannot place: it cannot tell a new frame from one it has
+    /// already drawn, and it cannot turn a tap on its own screen back into a
+    /// fraction of the agent's viewport.
+    ///
+    /// That is not hypothetical. This relay forwarded status, content type and
+    /// body and nothing else, so the first end-to-end run reached the browser
+    /// as "live frame: no X-Live-Sequence header" - a stream that was working
+    /// on both ends and unusable in the middle.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Headers { get; init; }
+
+    /// <summary>
+    /// An allowlist, not a copy of everything. A relay that forwarded whatever
+    /// the connector happened to send would eventually forward something that
+    /// means one thing on that hop and another on this one - a cookie, an auth
+    /// challenge, a caching directive computed for a different caller.
+    /// </summary>
+    private static readonly string[] ForwardedHeaders = ["X-Live-Sequence", "X-Live-Size"];
+
+    internal static Dictionary<string, string>? Forwarded(HttpResponseMessage response)
+    {
+        Dictionary<string, string>? carried = null;
+
+        foreach (var name in ForwardedHeaders)
+        {
+            if (!response.Headers.TryGetValues(name, out var values)) continue;
+            if (values.FirstOrDefault() is not { Length: > 0 } value) continue;
+
+            carried ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            carried[name] = value;
+        }
+
+        return carried;
+    }
+
     public bool IsSuccess => Status is >= 200 and < 300;
 
     /// <summary>
@@ -139,6 +180,7 @@ public sealed class ConnectorClient(string service, ConnectorEndpointOptions opt
                 ManifestVersion = response.Headers.TryGetValues(ManifestVersionHeader, out var versions)
                     ? versions.FirstOrDefault()
                     : null,
+                Headers = ConnectorReply.Forwarded(response),
             };
         }
         catch (HttpRequestException ex)

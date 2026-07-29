@@ -167,6 +167,15 @@ public sealed class PassThroughResult(ConnectorReply reply) : IResult
             httpContext.Response.Headers[ConnectorClient.ManifestVersionHeader] = manifestVersion;
         }
 
+        // Before the body, because headers cannot be set once writing starts.
+        if (reply.Headers is { Count: > 0 } carried)
+        {
+            foreach (var (name, value) in carried)
+            {
+                httpContext.Response.Headers[name] = value;
+            }
+        }
+
         if (reply.Body.Length > 0)
         {
             await httpContext.Response.Body.WriteAsync(reply.Body, httpContext.RequestAborted);
