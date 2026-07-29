@@ -51,7 +51,17 @@ x-agent-common: &agent-common
     DOTNET_ENVIRONMENT: Development
     ConnectorAgent__EnrollmentCode: *dev-enrollment
     ConnectorAgent__Class: pooled
-    ConnectorAgent__Headless: "true"
+    # Headed, on the Xvfb display the entrypoint starts. Headless was the
+    # one meaningful difference between this container and the host setup
+    # that signs in to Albert Heijn successfully, and AH's edge answered
+    # the containerised agent with an Akamai "Access Denied" on the login
+    # page itself. A headless browser reports no display, no compositor
+    # and different rendering paths, and bot protection reads all three.
+    #
+    # This is not fingerprint patching - see agent-entrypoint.sh. Nothing
+    # false is claimed about the browser; it is given the screen it was
+    # missing.
+    ConnectorAgent__Headless: "false"
     # A phone, because the streamed login photographs this browser and
     # shows it to somebody very likely holding one. See ConnectorAgentOptions.
     ConnectorAgent__BrowserDevice: ${AGENT_BROWSER_DEVICE:-Pixel 5}

@@ -71,7 +71,16 @@ RUN mkdir -p /profiles /work /state /app && chown -R pwuser /profiles /work /sta
 WORKDIR /app
 COPY --from=build --chown=pwuser /app .
 
+# Starts Xvfb so the browser can run genuinely headed. See the script for
+# why that is a correctness fix and not a disguise.
+#
+# Root-owned and read-only: this runs before the agent does, so a process
+# that could rewrite it could run anything it liked as the next restart.
+# pwuser needs to execute it, never to change it.
+COPY deploy/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
+RUN chmod 0555 /usr/local/bin/agent-entrypoint.sh
+
 # pwuser ships with the Playwright image and owns the browser bundles. A
 # browser rendering a hostile page must never be root.
 USER pwuser
-ENTRYPOINT ["./BankConnector.Agent"]
+ENTRYPOINT ["/usr/local/bin/agent-entrypoint.sh", "./BankConnector.Agent"]
