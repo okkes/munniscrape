@@ -140,6 +140,22 @@ public sealed class ControlPlaneClient
         {
             throw new ControlPlaneException(ex.StatusCode, $"GET {path} did not reach the control plane", ex);
         }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // The same translation the live methods do, and it matters more
+            // here because of what the caller does without it.
+            //
+            // AskAsync catches OperationCanceledException and turns it into
+            // MfaTimeout - "nobody answered challenge X before <expiry>". So a
+            // dropped connection while somebody was reading an SMS ended the
+            // challenge and blamed THEM for it, three lines below a handler
+            // that exists to retry a transient failure precisely because "a
+            // human answering an SMS code takes minutes, and a home line drops
+            // connections in that time". Named as what it is, and transient, so
+            // it is retried and counted like any other transport failure.
+            throw new ControlPlaneException(
+                HttpStatusCode.RequestTimeout, $"GET {path} timed out before the control plane answered", ex);
+        }
 
         using var _ = response;
 
