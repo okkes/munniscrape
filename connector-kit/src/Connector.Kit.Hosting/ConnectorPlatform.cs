@@ -175,6 +175,14 @@ public static class ConnectorPlatform
         var statuses = scope.ServiceProvider.GetRequiredService<ProviderStatusService>();
         statuses.SeedAsync(CancellationToken.None).GetAwaiter().GetResult();
 
+        // Development only, and Validate has already refused it anywhere else.
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<ConnectorOptions>>().Value;
+        if (!options.IsProduction && options.DevEnrollmentCode is { Length: > 0 } devCode)
+        {
+            scope.ServiceProvider.GetRequiredService<AgentAuth>()
+                .SeedDevEnrollmentAsync(devCode, CancellationToken.None).GetAwaiter().GetResult();
+        }
+
         // Touching the registry here rather than lazily means a manifest that
         // lies fails the deploy instead of the first user.
         _ = scope.ServiceProvider.GetRequiredService<IProviderRegistry>().CatalogDigest;
@@ -235,6 +243,15 @@ public static class ConnectorPlatform
         if (options.Database.Provider != ConnectorDatabaseProvider.Postgres)
         {
             problems.Add("Connector:Database:Provider must be 'postgres' in production");
+        }
+
+        // A fixed, reusable, never-expiring enrollment code is a password, and
+        // the one this option exists for is written in a compose file in the
+        // repository. Anything holding it could enroll an agent that leases
+        // real jobs and receives real credentials.
+        if (!string.IsNullOrWhiteSpace(options.DevEnrollmentCode))
+        {
+            problems.Add("Connector:DevEnrollmentCode must not be set in production");
         }
 
         if (problems.Count > 0)

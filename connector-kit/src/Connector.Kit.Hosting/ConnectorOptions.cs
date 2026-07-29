@@ -51,6 +51,36 @@ public sealed class ConnectorOptions
     /// </summary>
     public IList<string> FleetSubjects { get; set; } = [];
 
+    /// <summary>
+    /// Development only: a fixed enrollment code, seeded into the enrollment
+    /// table at start-up so an agent in the same compose file can enroll
+    /// unattended.
+    ///
+    /// Real enrollment codes are minted one at a time over an authenticated
+    /// admin call, are single-use and expire in fifteen minutes. That is
+    /// correct and it is also unusable from a compose file: the agent starts
+    /// beside the control plane with nobody present to carry a code between
+    /// them, and a `docker compose up` that needs a human in the middle is not
+    /// a stack anybody will run twice.
+    ///
+    /// Seeded against <see cref="DevFleetSubject"/> rather than a real user's
+    /// pseudonym, because the local agent has to serve whoever happens to be
+    /// clicking. Listing that subject in <see cref="FleetSubjects"/> is what
+    /// actually grants it - this option only creates the enrollment.
+    ///
+    /// <see cref="ConnectorPlatform"/> refuses to start if this is set in
+    /// production. A reusable code is a password, and this one is written in a
+    /// checked-in compose file.
+    /// </summary>
+    public string? DevEnrollmentCode { get; set; }
+
+    /// <summary>
+    /// The subject a <see cref="DevEnrollmentCode"/> enrollment belongs to.
+    /// Not a pseudonym of any real person: no HMAC of any user id can collide
+    /// with it, so it cannot silently become somebody's owner scope.
+    /// </summary>
+    public const string DevFleetSubject = "dev-fleet";
+
     public bool IsProduction => Mode == ConnectorMode.Production;
 }
 

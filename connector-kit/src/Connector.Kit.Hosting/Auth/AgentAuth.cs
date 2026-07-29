@@ -85,6 +85,49 @@ public sealed class AgentAuth(ConnectorDbContext db, IOptions<ConnectorOptions> 
     }
 
     /// <summary>
+    /// Development only: makes <see cref="ConnectorOptions.DevEnrollmentCode"/>
+    /// redeemable, creating the row or resetting the one already there.
+    ///
+    /// Resetting rather than creating-if-absent is deliberate. The agent's
+    /// state file and the control plane's database are two volumes, and
+    /// anything that clears one without the other - deleting a stuck agent
+    /// state, rebuilding the agent image, `docker compose down` on a stack
+    /// whose database volume outlives it - would otherwise leave the code
+    /// permanently spent and the agent permanently unable to come back. In a
+    /// development stack the useful invariant is "this code always works",
+    /// not "this code works once".
+    ///
+    /// Callers must have checked the mode; this method does not, so that the
+    /// refusal lives at start-up where it is loud.
+    /// </summary>
+    public async Task SeedDevEnrollmentAsync(string code, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+
+        var hash = Sign(code);
+        var expiresAt = time.GetUtcNow().AddYears(10);
+        var row = await db.Enrollments.FirstOrDefaultAsync(e => e.CodeHash == hash, ct);
+
+        if (row is null)
+        {
+            db.Enrollments.Add(new EnrollmentRow
+            {
+                CodeHash = hash,
+                Subject = ConnectorOptions.DevFleetSubject,
+                Name = "development",
+                ExpiresAt = expiresAt,
+            });
+        }
+        else
+        {
+            row.RedeemedAt = null;
+            row.ExpiresAt = expiresAt;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
     /// Redeems a code exactly once and returns the subject it was minted for.
     /// A second redemption of the same code fails, which is what makes it a
     /// code rather than a password.
