@@ -467,7 +467,14 @@ public sealed class ScreenshotRedactor
 
         if (page.IsClosed)
         {
-            _logger.LogDebug("no live frame: the page is closed");
+            // Warning, not debug. A closed page during a live view is not the
+            // routine end of anything - somebody is sitting in front of a
+            // picture that has silently stopped updating, and this is the only
+            // line that says why. It was invisible at the default level, so a
+            // stream that spent fifteen minutes photographing a page that no
+            // longer existed reported nothing at all: 0 ms shutters, no bytes,
+            // no error, and a human waiting for a login that could not happen.
+            _logger.LogWarning("no live frame: the page is closed, so this stream has nothing left to photograph");
             return LiveCapture.Refused;
         }
 
