@@ -67,11 +67,24 @@ public sealed class ConnectorAgentOptions
     public bool Headless { get; set; } = true;
 
     /// <summary>
-    /// An honest Playwright device descriptor, e.g. <c>Pixel 5</c>, for a
-    /// provider that serves a different site to a phone. Null is desktop
-    /// Chromium as it ships.
+    /// An honest Playwright device descriptor for a provider that serves a
+    /// different site to a phone.
+    ///
+    /// A phone by default, and that is a decision about the STREAMED LOGIN
+    /// rather than about scraping. The page is photographed and shown to
+    /// somebody who is very likely holding a phone; a 1280x720 desktop layout
+    /// arrives as a postage stamp they have to pinch at, and its links and
+    /// boxes are too small to hit accurately through a picture. A mobile
+    /// layout is one column of finger-sized targets, which is what the whole
+    /// relay needs, and it fits a phone screen with no zooming at all.
+    ///
+    /// Pixel 5 rather than an iPhone because it is Chromium reporting itself
+    /// as Chromium: the agent really is running Chrome, so the user agent is
+    /// true rather than a claim about a browser this is not.
+    ///
+    /// Set to null for desktop Chromium as it ships.
     /// </summary>
-    public string? BrowserDevice { get; set; }
+    public string? BrowserDevice { get; set; } = "Pixel 5";
 
     public string? BrowserLocale { get; set; }
 
