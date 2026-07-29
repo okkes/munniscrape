@@ -634,7 +634,22 @@ function updateLogin(streamNote) {
 
   // The challenge element is rebuilt only when the challenge itself changes,
   // so a progress frame arriving mid-typing does not wipe what was typed.
-  const challenge = view.challenge ?? null;
+  //
+  // A settled session has nothing left to answer, so its challenge is dropped
+  // whatever the last view said. Without this the live view survived its own
+  // sign-in: the session went `active`, the panel stayed on screen, and its
+  // frame poll kept asking for pictures of a browser that had already been
+  // released. Leaving the Live login tab and coming back made it plainer,
+  // because the panel was then rebuilt from the last cached view - the one
+  // still carrying the challenge - and sat on "Waiting for the first
+  // picture..." for ever.
+  //
+  // What it showed while doing that was worse than nothing: the poll answers
+  // `unsupported_resource` once a fetch has become the session's latest run,
+  // which this app renders, correctly for that code and wrongly for this
+  // situation, as "This provider does not offer that. Nothing you can do
+  // about this one." A finished sign-in read as a broken provider.
+  const challenge = isSettled(view.state) ? null : (view.challenge ?? null);
   if ((challenge?.id ?? null) !== live.login.challengeId) {
     live.login.challengeId = challenge?.id ?? null;
     live.login.challengeUi?.dispose();

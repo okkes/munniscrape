@@ -7,6 +7,7 @@ using Connector.Kit.Hosting.Data;
 using Connector.Kit.Hosting.Infrastructure;
 using Connector.Kit.Hosting.Live;
 using Connector.Kit.Hosting.Sessions;
+using Connector.Kit.Sessions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpLogging;
@@ -236,6 +237,19 @@ internal static class LiveEndpoints
     {
         var manifest = registry.RequireManifest(provider);
         var session = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+
+        // A session that is no longer signing in has no live view, whatever
+        // rows outlive it. Checked before the job lookup rather than after,
+        // because a successful login is normally followed by a fetch - and
+        // that fetch becomes the session's latest run, so the challenge is
+        // simply not on it and the caller was told "unknown challenge", which
+        // travels as `unsupported_resource`. A consumer renders that as "this
+        // provider does not offer that", so a sign-in that had just worked
+        // perfectly presented itself as a broken provider.
+        if (session.State is not (SessionState.Queued or SessionState.Running or SessionState.AwaitingInput))
+        {
+            throw new ConnectorException(ErrorCode.ChallengeExpired, "this live view is over");
+        }
 
         var job = await views.LatestJobAsync(session.Id, ct)
                   ?? throw ConnectorException.Unsupported("this session has no run in flight");
