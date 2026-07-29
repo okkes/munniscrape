@@ -27,15 +27,35 @@
 \set shop_password ''
 \endif
 
-DO $$
-BEGIN
-    IF length(:'bank_password') = 0 THEN
-        RAISE EXCEPTION 'BANK_DB_PASSWORD is not set on the postgres container';
-    END IF;
-    IF length(:'shop_password') = 0 THEN
-        RAISE EXCEPTION 'SHOP_DB_PASSWORD is not set on the postgres container';
-    END IF;
-END $$;
+-- psql substitutes :'name' almost everywhere, but NOT inside a dollar-quoted
+-- string: those are handed to the server byte for byte. This guard used to
+-- live inside the DO block below, so the server received a literal
+-- `:'bank_password'` and stopped at the colon:
+--
+--   psql:/docker-entrypoint-initdb.d/01-create-databases.sql:38:
+--       ERROR:  syntax error at or near ":"
+--
+-- With ON_ERROR_STOP set by the entrypoint, that aborted the whole script
+-- before either CREATE ROLE ran - and the failure then arrived at the other
+-- end of the stack as `28P01 password authentication failed for user
+-- "shop_connector"`, because Postgres deliberately reports an unknown role
+-- and a wrong password identically. A refusal that reads as a bad password
+-- is worse than no refusal at all.
+--
+-- So: compute the check out here, where substitution works, and raise inside
+-- a block that mentions no variable at all.
+SELECT
+    length(:'bank_password') = 0 AS bank_password_missing,
+    length(:'shop_password') = 0 AS shop_password_missing
+\gset
+
+\if :bank_password_missing
+DO $$ BEGIN RAISE EXCEPTION 'BANK_DB_PASSWORD is not set on the postgres container'; END $$;
+\endif
+
+\if :shop_password_missing
+DO $$ BEGIN RAISE EXCEPTION 'SHOP_DB_PASSWORD is not set on the postgres container'; END $$;
+\endif
 
 CREATE ROLE bank_connector WITH LOGIN PASSWORD :'bank_password';
 CREATE ROLE shop_connector WITH LOGIN PASSWORD :'shop_password';
