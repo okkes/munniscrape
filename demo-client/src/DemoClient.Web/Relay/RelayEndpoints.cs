@@ -241,6 +241,63 @@ public static class RelayEndpoints
                 ticket: null, ct));
         });
 
+        // ── the live view ───────────────────────────────────────────────
+        //
+        // Two more proxies, for the same reason the image needs one: the
+        // browser never learns a connector hostname and never holds a
+        // connector credential, so every byte of a streamed login goes through
+        // here. These were the missing hop - the agent was photographing the
+        // page and the client was asking for pictures, and the relay in
+        // between had no route to carry them, so a working stream on both ends
+        // met a 404 in the middle.
+
+        api.MapGet("/{service}/{provider}/login/{sessionId}/challenges/{challengeId}/live/frame", async (
+            HttpContext http,
+            string service,
+            string provider,
+            string sessionId,
+            string challengeId,
+            ConnectorClients clients,
+            ILoggerFactory loggers,
+            CancellationToken ct) =>
+        {
+            if (!clients.TryGet(service, out var client)) return RelayErrors.UnknownService(service, Log(loggers));
+
+            // The cursor rides through unchanged. It is the consumer's own
+            // "highest frame I have already drawn", and the connector answers
+            // 204 when it has nothing newer - which is most polls on a login
+            // form nobody is touching.
+            var after = http.Request.Query["after"].ToString();
+            var query = string.IsNullOrEmpty(after) ? string.Empty : $"?after={Uri.EscapeDataString(after)}";
+
+            return Pass(await client.GetAsync(
+                $"/v1/{Segment(provider)}/login/{Segment(sessionId)}/challenges/{Segment(challengeId)}/live/frame{query}",
+                ticket: null, ct));
+        });
+
+        api.MapPost("/{service}/{provider}/login/{sessionId}/challenges/{challengeId}/live/input", async (
+            HttpContext http,
+            string service,
+            string provider,
+            string sessionId,
+            string challengeId,
+            ConnectorClients clients,
+            ILoggerFactory loggers,
+            CancellationToken ct) =>
+        {
+            if (!clients.TryGet(service, out var client)) return RelayErrors.UnknownService(service, Log(loggers));
+
+            // Forwarded as raw JSON rather than through a typed body, so the
+            // relay never has to know what an input event is. It is a pipe
+            // here, and a pipe that understood the payload would be a second
+            // place for the grammar to drift from the one that enforces it.
+            var batch = await ReadOptionalAsync<System.Text.Json.Nodes.JsonNode>(http, ct);
+
+            return Pass(await client.PostAsync(
+                $"/v1/{Segment(provider)}/login/{Segment(sessionId)}/challenges/{Segment(challengeId)}/live/input",
+                batch, ticket: null, deviceClass: null, ct));
+        });
+
         api.MapPost("/{service}/{provider}/login/{sessionId}/answer", async (
             string service,
             string provider,
