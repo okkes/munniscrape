@@ -180,10 +180,20 @@ closes, so a web user re-authenticates on each visit. See platform design
 | `ephemeral` *(default)* | web clients may connect; the bundle is not persisted across browser restarts |
 | `none` | web clients cannot connect — reserved for a login so heavy that repeating it per visit is unreasonable |
 
-A connector issuing a bundle to a web client caps its `ttl_seconds` at
-`min(provider ttl, 3600)` regardless of the manifest value, so a bundle
-that escapes the tab has a small window. The caller declares the device
-class with `X-Device-Class: native | web` on `POST /login`.
+A connector issuing a bundle to a web client uses the manifest's
+`ttl_seconds` unless the deployment configures
+`Connector:Timeouts:WebBundleMaxTtlSeconds`, in which case it is
+`min(provider ttl, cap)`. The caller declares the device class with
+`X-Device-Class: native | web` on `POST /login`.
+
+The bound that holds for a web client is `ephemeral` custody itself: the
+bundle lives in `sessionStorage` and dies with the tab, so a new tab signs
+in again whatever the TTL says. A second deadline inside that one fires
+only while somebody still has the tab open, and it cannot be renewed —
+the control plane holds credential material for the length of a job and
+nowhere else, so it has nothing to refresh with. This said
+`min(provider ttl, 3600)` while the shipped default was twelve hours and
+nothing connected the two.
 
 **Note the interaction with BYO agents:** for a `secret_custody: agent`
 provider the bundle contains no secret at all, only `{agent_id,

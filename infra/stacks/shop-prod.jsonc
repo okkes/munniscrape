@@ -37,8 +37,12 @@
   },
 
   "bundle": {
-    "currentKid": "k1",
-    "webTtlSecondsCap": 3600
+    "currentKid": "k1"
+    // webTtlSecondsCap omitted: the manifest TTL stands. A web bundle lives in
+    // sessionStorage and dies with the tab, which is the boundary that actually
+    // holds; a second deadline inside it only fires against somebody still using
+    // the tab, and the control plane cannot renew one - it keeps no credential
+    // material between jobs. Set it here if a deployment wants one anyway.
   },
 
   "agents": {

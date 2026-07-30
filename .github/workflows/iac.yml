@@ -178,11 +178,22 @@ jobs:
             need(Number.isInteger(staged) && staged > 0 && staged <= 7,
               `retention.stagedDataDays must be 1..7, was ${staged}`);
 
-            // A browser has no encryption at rest we control, so a bundle
-            // issued to one gets a small window whatever the provider says.
+            // Optional, and absent means the manifest's own TTL stands.
+            //
+            // This demanded 1..3600 while the code's default was 43200 and
+            // nothing wired the two together, so the gate enforced an hour that
+            // no running service ever applied. The hour was not buying what it
+            // looked like it was buying either: a web bundle lives in
+            // sessionStorage and dies with the tab, so a second deadline inside
+            // that one only ever fires against somebody who still has the tab
+            // open - and it cannot be renewed from the control plane, which
+            // holds no credential material between jobs.
+            //
+            // Still bounded when it IS set, because a cap of a year would be a
+            // typo rather than a decision.
             const webCap = stack.bundle?.webTtlSecondsCap;
-            need(Number.isInteger(webCap) && webCap > 0 && webCap <= 3600,
-              `bundle.webTtlSecondsCap must be 1..3600, was ${webCap}`);
+            need(webCap === undefined || (Number.isInteger(webCap) && webCap > 0 && webCap <= 7776000),
+              `bundle.webTtlSecondsCap, when set, must be 1..7776000 (90d), was ${webCap}`);
 
             if (stack.role === 'prod' && stack.features?.rawPayloadDebug !== false) {
               fail(`${file}: features.rawPayloadDebug must be false in production - raw provider payloads are a debugging aid and a liability`);

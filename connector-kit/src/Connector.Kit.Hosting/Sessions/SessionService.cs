@@ -237,8 +237,8 @@ public sealed class SessionService(
     {
         ArgumentNullException.ThrowIfNull(manifest);
         var ttl = manifest.Auth.Session.TtlSeconds;
-        return deviceClass == DeviceClass.Web
-            ? Math.Min(ttl, _options.Timeouts.WebBundleMaxTtlSeconds)
+        return deviceClass == DeviceClass.Web && _options.Timeouts.WebBundleMaxTtlSeconds is { } cap
+            ? Math.Min(ttl, cap)
             : ttl;
     }
 

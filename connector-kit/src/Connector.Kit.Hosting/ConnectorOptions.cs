@@ -193,21 +193,38 @@ public sealed class ConnectorTimeouts
 
     /// <summary>
     /// Web-issued bundles are capped at this regardless of the manifest TTL.
+    /// Null - the default - means the manifest's own TTL stands.
     ///
     /// This caps the SEALED WRAPPER, not the credential inside it. A provider
     /// with a refresh token still holds one good for weeks; all this decides
     /// is how long a blob that escaped a browser tab stays usable.
     ///
-    /// It was one hour, and that was too aggressive to be honest. A connection
-    /// would sit in the UI marked "Connected", stop working an hour later, and
-    /// demand a full sign-in whose only effect was to re-seal the very same
-    /// refresh token. That is friction with no security bought: the credential
-    /// was never the thing expiring.
+    /// It was one hour, then twelve, and the reasoning that moved it the first
+    /// time was never finished. An hour was "friction with no security bought:
+    /// the credential was never the thing expiring", and twelve hours is the
+    /// same sentence with a bigger number. Overnight is longer than twelve
+    /// hours, so the ordinary case - close the laptop, come back next morning -
+    /// still demanded a full sign-in whose only effect was to re-seal a refresh
+    /// token that had never stopped working.
     ///
-    /// Twelve hours instead, which is about the length of a browser tab's life
-    /// and still ~180x shorter than the native custody a manifest asks for.
-    /// The real web boundary remains sessionStorage - the bundle dies with the
-    /// tab - and this is the belt-and-braces bound on one that escapes it.
+    /// And there is nothing this cap can do that the browser is not already
+    /// doing. A web bundle lives in sessionStorage: it dies with the tab, and a
+    /// new tab has to sign in again whatever this number says. A second
+    /// deadline INSIDE that boundary only ever fires while somebody still has
+    /// the tab open - which is to say, only against the person using it
+    /// correctly.
+    ///
+    /// Nor can renewing it help, and that is worth writing down because it
+    /// looks like the obvious middle path. The control plane holds credential
+    /// material on <c>JobRow</c> between enqueue and the terminal state and
+    /// nowhere else, so it cannot refresh anything in the background - the
+    /// bundle in the tab is the only copy. Letting a client swap an expired
+    /// bundle for a fresh one would work, and would also let anyone holding a
+    /// leaked bundle renew it for ever: strictly weaker than an honestly long
+    /// TTL, while looking stricter.
+    ///
+    /// So: the tab is the boundary, and this exists for a deployment that
+    /// wants a second one anyway.
     /// </summary>
-    public int WebBundleMaxTtlSeconds { get; set; } = 43_200;
+    public int? WebBundleMaxTtlSeconds { get; set; }
 }
