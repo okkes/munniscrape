@@ -1,4 +1,5 @@
 using System.Globalization;
+using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
 using Microsoft.AspNetCore.Http;
 
@@ -21,6 +22,13 @@ public static class LiveHeaders
 
     /// <summary><c>390x844</c>. Pixels, because a size is the one thing that cannot be a fraction of itself.</summary>
     public const string Size = "X-Live-Size";
+
+    /// <summary>
+    /// Whose page the frame is of: <c>https://login.ah.nl</c>. Optional, and
+    /// its absence means unknown rather than acceptable.
+    /// </summary>
+    public const string Origin = "X-Live-Origin";
+
 
     /// <summary>
     /// A frame is never worth re-reading and must never be written down by
@@ -78,6 +86,36 @@ public static class LiveHeaders
 
     public static string FormatSequence(long sequence) =>
         sequence.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Reads <c>X-Live-Origin</c>, or null. Optional rather than required: an
+    /// agent that cannot establish an origin must still be able to deliver the
+    /// picture, because a frame with an unknown origin is exactly the frame the
+    /// human most needs to see labelled as such.
+    ///
+    /// Normalised here rather than trusted, because the value describes a page
+    /// this platform does not control and a login can be navigated anywhere:
+    ///
+    ///   * origin only, so a query string carrying a token cannot ride along;
+    ///   * http and https only - <c>about:blank</c>, <c>data:</c> and
+    ///     <c>file:</c> are not somebody's sign-in page and must not be
+    ///     displayed as though they were;
+    ///   * PUNYCODE, which is the part that matters. Rendered as unicode,
+    ///     <c>https://аh.nl</c> with a Cyrillic а is indistinguishable from the
+    ///     real thing at any font size, and this string exists specifically to
+    ///     be squinted at by somebody about to type their password. Browsers
+    ///     show the ASCII form for exactly this reason and so does this.
+    /// </summary>
+    public static string? ReadOrigin(HttpRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // Re-normalised rather than trusted, even though the agent normalised it
+        // before sending. The agent is a separate process on somebody else's
+        // machine, and "the other end already checked" is not a property this
+        // side can assert about a header.
+        return LiveOrigin.Normalize(request.Headers[Origin].ToString());
+    }
 
     /// <summary>
     /// Reads the <c>after</c> query parameter, which every live poll takes and

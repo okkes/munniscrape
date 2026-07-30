@@ -29,6 +29,9 @@ public sealed class ControlPlaneClient
     /// <summary><c>WIDTHxHEIGHT</c>, the size these bytes really are.</summary>
     public const string SizeHeader = "X-Live-Size";
 
+    /// <summary>Whose page these bytes are of. Absent means the agent could not tell.</summary>
+    public const string OriginHeader = "X-Live-Origin";
+
     private readonly IHttpClientFactory _factory;
     private readonly ILogger<ControlPlaneClient> _logger;
 
@@ -207,6 +210,15 @@ public sealed class ControlPlaneClient
             SequenceHeader, frame.Sequence.ToString(CultureInfo.InvariantCulture));
         request.Headers.TryAddWithoutValidation(
             SizeHeader, string.Create(CultureInfo.InvariantCulture, $"{frame.Width}x{frame.Height}"));
+
+        // Optional, and omitted rather than sent empty when the agent could not
+        // establish one: an absent header reads as "unknown origin" at the far
+        // end, which is the truth, whereas a blank one invites being treated as
+        // a value.
+        if (frame.Origin is { Length: > 0 } origin)
+        {
+            request.Headers.TryAddWithoutValidation(OriginHeader, origin);
+        }
 
         HttpResponseMessage response;
         try

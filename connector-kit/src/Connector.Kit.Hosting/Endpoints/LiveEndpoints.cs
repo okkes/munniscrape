@@ -81,6 +81,14 @@ internal static class LiveEndpoints
                 {
                     http.Response.Headers[LiveHeaders.Sequence] = LiveHeaders.FormatSequence(frame.Sequence);
                     http.Response.Headers[LiveHeaders.Size] = LiveHeaders.FormatSize(frame.Width, frame.Height);
+
+                    // Omitted rather than blank when unknown, so the consumer
+                    // says so instead of showing an empty reassurance.
+                    if (frame.Origin is { Length: > 0 } origin)
+                    {
+                        http.Response.Headers[LiveHeaders.Origin] = origin;
+                    }
+
                     http.Response.Headers.CacheControl = LiveHeaders.NoStore;
                     return Results.File(frame.Bytes, LiveHeaders.Jpeg);
                 }
@@ -163,6 +171,11 @@ internal static class LiveEndpoints
                 Width = width,
                 Height = height,
                 Bytes = bytes,
+                // Re-normalised on the way in, not taken as sent. The agent is
+                // a separate process on a machine this side does not control,
+                // and this string is about to be shown to somebody as grounds
+                // for typing a password.
+                Origin = LiveHeaders.ReadOrigin(http.Request),
             });
 
             // Only a frame that is actually now wakes the consumers waiting

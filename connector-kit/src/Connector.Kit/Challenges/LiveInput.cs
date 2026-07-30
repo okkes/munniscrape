@@ -233,4 +233,75 @@ public sealed record LiveFrame
     /// its worst frame rather than its best.
     /// </summary>
     public required byte[] Bytes { get; init; }
+
+    /// <summary>
+    /// Whose page this is a picture of: <c>https://login.ah.nl</c>. Null when
+    /// the agent could not establish one, which must read as "unknown" and
+    /// never as "fine".
+    ///
+    /// This is the only anti-phishing affordance the streamed login has. The
+    /// human is looking at a photograph of a page on a machine they cannot
+    /// see, so there is no address bar and no padlock; without this, the sole
+    /// claim about whose sign-in form they are typing a password into is the
+    /// provider name THIS SIDE put above it, which is not evidence of anything.
+    ///
+    /// Per FRAME rather than per challenge, and that is the whole point. A
+    /// login navigates - Albert Heijn goes from a form to an SMS step - and an
+    /// origin captured once when the challenge was raised would still be on
+    /// screen after the page moved somewhere else. An observation attached to
+    /// one picture can only ever be stale by one frame.
+    ///
+    /// The ORIGIN, never the URL: a full address carries query parameters, and
+    /// those carry tokens.
+    /// </summary>
+    public string? Origin { get; init; }
+}
+
+/// <summary>
+/// What counts as an origin worth showing a human who is about to type a
+/// password into a photograph.
+///
+/// Here rather than beside the wire header, because BOTH ends need it and they
+/// must not disagree: the agent normalises what it observed before sending, and
+/// the control plane normalises again on the way in - a separate process on
+/// somebody else's machine having already checked is not a property this side
+/// can assert about a header it received.
+/// </summary>
+public static class LiveOrigin
+{
+    /// <summary>
+    /// A host is bounded at 253 characters by DNS, so anything past this is not
+    /// a hostname anybody typed.
+    /// </summary>
+    public const int MaxLength = 300;
+
+    /// <summary>
+    /// The displayable origin of an absolute URL, or null when there is not one
+    /// worth displaying. Null must reach the human as "unknown"; the one thing
+    /// this may never do is return something reassuring about a page it could
+    /// not identify.
+    ///
+    ///   * Origin only, so a query string carrying a token cannot ride along.
+    ///   * http and https only. <c>about:blank</c>, <c>data:</c> and
+    ///     <c>file:</c> are not somebody's sign-in page and must not be
+    ///     displayed as though they were.
+    ///   * Punycode, which is the part that earns its keep. Rendered as
+    ///     unicode, <c>https://аh.nl</c> with a Cyrillic а is
+    ///     indistinguishable from the real thing at any font size - and this
+    ///     string exists precisely to be squinted at. Browsers show the ASCII
+    ///     form for this exact reason; so does this.
+    /// </summary>
+    public static string? Normalize(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || url.Length > MaxLength) return null;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)) return null;
+        if (parsed.Scheme is not ("http" or "https")) return null;
+        if (string.IsNullOrEmpty(parsed.IdnHost)) return null;
+
+        var origin = parsed.IsDefaultPort
+            ? string.Concat(parsed.Scheme, "://", parsed.IdnHost)
+            : string.Concat(parsed.Scheme, "://", parsed.IdnHost, ":", parsed.Port.ToString(CultureInfo.InvariantCulture));
+
+        return origin.Length > MaxLength ? null : origin;
+    }
 }

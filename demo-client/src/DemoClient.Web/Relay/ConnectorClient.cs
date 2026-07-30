@@ -54,7 +54,7 @@ public sealed record ConnectorReply
     /// means one thing on that hop and another on this one - a cookie, an auth
     /// challenge, a caching directive computed for a different caller.
     /// </summary>
-    private static readonly string[] ForwardedHeaders = ["X-Live-Sequence", "X-Live-Size"];
+    private static readonly string[] ForwardedHeaders = ["X-Live-Sequence", "X-Live-Size", "X-Live-Origin"];
 
     internal static Dictionary<string, string>? Forwarded(HttpResponseMessage response)
     {

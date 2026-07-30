@@ -219,6 +219,10 @@ export const api = {
       // every tap lands somewhere else on a phone.
       width: Number.isFinite(width) ? width : 0,
       height: Number.isFinite(height) ? height : 0,
+      // Whose page this picture is of, per frame, or null. Null must stay null
+      // all the way to the screen: the human needs to read "we cannot tell you"
+      // rather than nothing at all.
+      origin: response.headers.get('X-Live-Origin') || null,
       blob: await response.blob(),
     };
   },

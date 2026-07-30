@@ -320,7 +320,11 @@ internal sealed class LiveViewSession : IAsyncDisposable
                 // the event: FrameNavigated is a notification and a
                 // notification can be missed, but no frame may leave for a page
                 // that is not where it is supposed to be.
-                if (!IsAllowed(_page.Url))
+                // Read once and reused for the frame below, so the origin
+                // reported is the one that was checked rather than a second
+                // reading taken a few milliseconds later.
+                var url = _page.Url;
+                if (!IsAllowed(url))
                 {
                     Stop("the page navigated off the origin the stream opened on");
                     return;
@@ -367,6 +371,12 @@ internal sealed class LiveViewSession : IAsyncDisposable
                     Width = capture.Width,
                     Height = capture.Height,
                     Bytes = capture.Jpeg,
+                    // Whose page this is, from the URL checked above. The
+                    // human is looking at a photograph with no address bar and
+                    // no padlock, so without this the only claim about whose
+                    // password box they are filling in is a provider name the
+                    // consumer wrote, which is evidence of nothing.
+                    Origin = LiveOrigin.Normalize(url),
                 };
 
                 var postAt = _time.GetTimestamp();

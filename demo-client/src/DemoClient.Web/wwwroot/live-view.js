@@ -206,29 +206,21 @@ export function nextSequence() {
   return lastSequence;
 }
 
-/**
- * The page this is a picture of, as far as anything here can tell.
+/*
+ * The origin used to be read off the challenge here, by a function that tried
+ * `challenge.origin`, `challenge.live.origin` and `challenge.url` in turn. No
+ * challenge has ever carried any of the three, so it returned null every time
+ * and the panel read "nobody told us whose page this is" for the entire life of
+ * the feature - while a comment above it explained why the domain matters.
  *
- * A rectangle showing a login form with no domain beside it is, structurally,
- * what a phishing page is - the domain is the single thing a person uses to
- * decide whether to type a password. `ChallengeView.Url` is already a provider
- * URL on the wire and `redirectChallenge` already renders one, so the "no URLs
- * in the payload" rule was never about provider identity; it is about connector
- * paths. Both spellings are read because the field carrying it is the one part
- * of this feature still moving, and a missing origin must read as missing
- * rather than as absent.
+ * It now arrives per frame, as `X-Live-Origin`, from the URL the agent checked
+ * immediately before taking the picture. That is the only place it can honestly
+ * come from: a rectangle showing a login form with no domain beside it is
+ * structurally what a phishing page is, and the domain is the one thing a
+ * person uses to decide whether to type a password into it. Something read off
+ * a challenge raised minutes earlier would still be on screen after the page
+ * had navigated somewhere else.
  */
-function originOf(challenge) {
-  const raw = challenge.origin ?? challenge.live?.origin ?? challenge.url ?? null;
-  if (!raw) return null;
-  try {
-    return new URL(raw).origin;
-  } catch {
-    // Not parseable as a URL: show it anyway rather than hide it. The human
-    // reading something odd is better than the human reading nothing.
-    return String(raw);
-  }
-}
 
 /**
  * Text the wire will accept, cut out of whatever the human actually typed or
@@ -285,8 +277,6 @@ export function liveViewChallenge(challenge, ctx) {
       h('pre', { class: 'raw' }, JSON.stringify(challenge, null, 2)));
   }
 
-  const origin = originOf(challenge);
-
   // ── the picture ─────────────────────────────────────────────────────────
 
   const picture = h('img', {
@@ -333,6 +323,17 @@ export function liveViewChallenge(challenge, ctx) {
   const stage = h('div', { class: 'live-stage' }, picture, shadow, veil);
 
   const sizeChip = h('code', { class: 'muted' }, 'no frame yet');
+
+  // Whose page the CURRENT picture is of. Starts unknown and stays unknown
+  // until a frame says otherwise, because "we have not been told yet" and "it
+  // is fine" must never look the same here.
+  const originChip = h('code', { class: 'live-origin-value is-unknown' },
+    'nobody told us whose page this is');
+
+  const paintOrigin = (origin) => {
+    originChip.textContent = origin ?? 'nobody told us whose page this is';
+    originChip.classList.toggle('is-unknown', !origin);
+  };
   const problem = h('div', { class: 'live-problem' });
   const echo = h('p', { class: 'live-echo', role: 'status', 'aria-live': 'polite' });
 
@@ -365,6 +366,13 @@ export function liveViewChallenge(challenge, ctx) {
     // on the desktop it was tested on.
     sizeChip.textContent = frame.width > 0 ? `${frame.width} x ${frame.height}` : 'size not reported';
     sizeChip.classList.toggle('muted', frame.width <= 0);
+
+    // Per frame, because the page moves. A login walks from a form to an SMS
+    // step, and an origin captured once when the challenge was raised would sit
+    // there unchanged after the page had gone somewhere else - which is the one
+    // failure this label must not have, since its entire job is to be true at
+    // the moment somebody is reading it.
+    paintOrigin(frame.origin ?? null);
 
     if (!drawn) {
       drawn = true;
@@ -928,9 +936,7 @@ export function liveViewChallenge(challenge, ctx) {
     h('div', { class: 'live-origin' },
       badge('live', 'info'),
       h('span', { class: 'live-origin-label' }, 'You are typing into'),
-      origin
-        ? h('code', { class: 'live-origin-value' }, origin)
-        : h('code', { class: 'live-origin-value is-unknown' }, 'nobody told us whose page this is'),
+      originChip,
       sizeChip),
 
     stage,
