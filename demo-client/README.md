@@ -125,8 +125,8 @@ directories and mint their bundle keys in memory at startup.
 | `mock-bank-simple` | bank | none | accounts + transactions, balances that reconcile |
 | `mock-bank-broken` | bank | none | `provider_changed` from the bank side |
 | **Albert Heijn** (`ah`) | shop | **required** | a username and password typed into `login.ah.nl` by a headless browser — see the sign-in flow below |
-| **Amazon.nl** (`amazon-nl`) | shop | **required** | `browser_interactive`, `unattended: false` — the provider that most wants a human at the browser |
-| **bol.com** (`bol`) | shop | **required** | `browser_once`, `unattended: false` |
+| **Amazon.nl** (`amazon-nl`) | shop | **required** | `browser_interactive`, `unattended_fetch: false` — the provider that most wants a human at the browser |
+| **bol.com** (`bol`) | shop | **required** | `browser_once`, `unattended_fetch: false` |
 | **Coolblue** (`coolblue`) | shop | **required** | `browser_once`, and the only real provider whose egress requirement is `any` rather than `residential` |
 | **Jumbo** (`jumbo`) | shop | **required** | a ~24h session the UI has to explain without sounding broken |
 | **Lidl Plus** (`lidl`) | shop | none | `http` tier, `oauth_redirect`. **It stopped needing an agent** — older notes here said otherwise |

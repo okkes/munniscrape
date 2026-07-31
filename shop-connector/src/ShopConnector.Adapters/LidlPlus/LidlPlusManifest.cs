@@ -57,7 +57,7 @@ internal static class LidlPlusManifest
         // device passes it because it is one.
         Runtime = ProviderRuntime.Http,
         Agent = AgentRequirement.Inline,
-        Unattended = true,
+        UnattendedFetch = true,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "lidl",

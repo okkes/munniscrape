@@ -58,7 +58,7 @@ public sealed class WooGuestTests
         Assert.Equal(AgentClass.Inline, Manifest.Agent.Class);
         Assert.Empty(Manifest.Auth.Challenges);
 
-        Assert.True(Manifest.Unattended);
+        Assert.True(Manifest.UnattendedFetch);
         Assert.True(Manifest.Auth.Session.Refreshable);
         Assert.False(Manifest.Auth.Session.RotatesOnUse);
 

@@ -66,7 +66,10 @@ internal static class BolManifest
             // possible signal for a risk-based score to fail on.
             Egress = new EgressRequirement { Country = "NL", Kind = "residential" },
         },
-        Unattended = false,
+        UnattendedFetch = false,
+        // reCAPTCHA's interactive form is unrelayable: there is no picture that
+        // carries the question.
+        LoginNeedsHeadedAgent = true,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "bol",

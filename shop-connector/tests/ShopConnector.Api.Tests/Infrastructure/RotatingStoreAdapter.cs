@@ -126,7 +126,13 @@ internal sealed class RotatingStoreAdapter : IProviderAdapter
         ManifestVersion = 1,
         Runtime = ProviderRuntime.Http,
         Agent = AgentRequirement.Inline,
-        Unattended = true,
+        UnattendedFetch = true,
+        // Declared so the Disconnect gate has something offline to prove it
+        // against. Of the shipped fleet only Picnic and Amazon log out
+        // upstream, and neither can be driven without a real account - so
+        // without this the "a declared logout really does enqueue one" half of
+        // the rule would be asserted by nothing.
+        Logout = LogoutSupport.Session,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         Auth = new AuthSpec

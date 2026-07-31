@@ -8,7 +8,7 @@ namespace Connector.Kit.Manifests;
 /// This is the only contract a consumer codes against: it renders login
 /// forms from <see cref="Auth"/>, decides which resources to offer from
 /// <see cref="Resources"/>, and knows before asking whether scheduled sync
-/// is even offerable from <see cref="Unattended"/>. Adding a provider is a
+/// is even offerable from <see cref="UnattendedFetch"/>. Adding a provider is a
 /// manifest plus an adapter - never a change in the consuming app.
 /// </summary>
 public sealed record ProviderManifest
@@ -35,8 +35,52 @@ public sealed record ProviderManifest
 
     public required AgentRequirement Agent { get; init; }
 
-    /// <summary>Can a fetch complete with no human present?</summary>
-    public required bool Unattended { get; init; }
+    /// <summary>
+    /// Can a FETCH complete with no human present?
+    ///
+    /// The fetch axis and nothing else. It was called <c>Unattended</c>, which
+    /// read as a claim about the whole provider and was believed as one: Albert
+    /// Heijn and Lidl Plus both declare it true while neither login can finish
+    /// without a person - AH streams its own page to them, Lidl sends them to
+    /// sign in in their own browser. Both are still true here, because a stored
+    /// refresh token really does fetch on its own at three in the morning; what
+    /// was wrong was the name promising something about the login too.
+    ///
+    /// Whether the LOGIN needs a human, and where that human has to be
+    /// standing, is <see cref="LoginNeedsHeadedAgent"/> and the challenge list
+    /// on <see cref="Auth"/>.
+    /// </summary>
+    public required bool UnattendedFetch { get; init; }
+
+    /// <summary>
+    /// True when this login can meet a wall only a human sitting at the agent's
+    /// own browser can pass.
+    ///
+    /// False does not mean the login needs nobody. It means whoever is needed
+    /// can be reached from anywhere - a captcha photographed and relayed to a
+    /// phone, a live view of the provider's own page - so any agent will do.
+    /// True means the wall is interactive and unrelayable, and the only person
+    /// who can pass it is one with hands on that machine.
+    ///
+    /// Declared rather than discovered. The condition already exists at run
+    /// time as <c>IJobContext.Attended</c>, which comes from the agent's own
+    /// headless setting, so today a pooled headless agent leases an Amazon
+    /// login, drives it for two minutes, meets the widget and fails it
+    /// <c>blocked_by_provider</c> - having learnt nothing the catalogue could
+    /// not have said up front.
+    /// </summary>
+    public bool LoginNeedsHeadedAgent { get; init; }
+
+    /// <summary>
+    /// What disconnecting does to the account upstream, if anything.
+    ///
+    /// There was no field, so <c>DELETE /sessions/{id}</c> called
+    /// <c>LogoutAsync</c> on every provider - a no-op for fourteen of the
+    /// sixteen, each costing a job row, a lease and an agent round trip - and
+    /// the consuming app told the user "logged out upstream" every time,
+    /// including when nothing of the sort had happened.
+    /// </summary>
+    public LogoutSupport Logout { get; init; } = LogoutSupport.None;
 
     /// <summary>Where the long-lived secret lives at rest.</summary>
     public required SecretCustody SecretCustody { get; init; }
@@ -97,7 +141,7 @@ public enum SecretCustody
     /// <summary>The user's device holds an opaque sealed bundle. The default.</summary>
     Client,
 
-    /// <summary>The service vault holds it, envelope-encrypted. Only where Unattended is true.</summary>
+    /// <summary>The service vault holds it, envelope-encrypted. Only where UnattendedFetch is true.</summary>
     Server,
 
     /// <summary>A BYO agent holds it. The control plane never has it at all.</summary>
@@ -112,6 +156,36 @@ public enum WebSupport
 
     /// <summary>Web may not connect - the login is too heavy to repeat per visit.</summary>
     None,
+}
+
+/// <summary>
+/// What disconnecting reaches beyond this platform, if anything.
+///
+/// The three values are three different promises to make to the person
+/// pressing the button, and telling them apart matters most at the far end:
+/// signing somebody out of the grocery app on their own phone because they
+/// tidied up a connection here is not a tidy-up, it is a surprise.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<LogoutSupport>))]
+public enum LogoutSupport
+{
+    /// <summary>
+    /// Nothing upstream. Disconnect purges what is held here and the provider
+    /// never learns of it. The default, and true of most adapters.
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// Only the credential this connection holds stops working. The user's own
+    /// app, on their own phone, is untouched.
+    /// </summary>
+    Session,
+
+    /// <summary>
+    /// The account's other sessions go too. Declaring this is what lets a
+    /// consumer warn somebody before it happens.
+    /// </summary>
+    Account,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<AgentClass>))]

@@ -98,7 +98,7 @@ public sealed class BolAdapterTests
         // so there is nothing to refresh and a human is needed when it dies.
         // Claiming otherwise would make the consuming app promise scheduled
         // syncing and then fail, which is worse than not supporting bol at all.
-        Assert.False(manifest.Unattended);
+        Assert.False(manifest.UnattendedFetch);
         Assert.False(manifest.Auth.Session.Refreshable);
         Assert.False(manifest.Auth.Reauth.Cheap);
         Assert.Equal(new[] { "session_expired" }, manifest.Auth.Reauth.TriggerCodes);

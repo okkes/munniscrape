@@ -313,7 +313,15 @@ internal static class LoginEndpoints
             // Best-effort upstream logout, then purge regardless. A user
             // disconnecting must always succeed locally, whatever the provider
             // does or does not do about it.
-            if (session.State == SessionState.Active)
+            //
+            // Gated on the manifest now: fourteen of the sixteen adapters
+            // inherit the interface's do-nothing default, and each of those
+            // Disconnects was minting a job row, taking a lease and spending a
+            // whole agent round trip to reach a method that returns a completed
+            // task. Declaring it also lets the consumer stop telling every user
+            // it "logged out upstream" when for most providers nothing left the
+            // building.
+            if (session.State == SessionState.Active && manifest.Logout != LogoutSupport.None)
             {
                 await queue.EnqueueAsync(new NewJob
                 {

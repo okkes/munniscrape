@@ -96,7 +96,7 @@ public sealed class CoolblueAdapterTests
 
         // offline_access plus a refresh_token grant are CONFIRMED, and the
         // validator only allows unattended: true because of them.
-        Assert.True(manifest.Unattended);
+        Assert.True(manifest.UnattendedFetch);
         Assert.True(manifest.Auth.Session.Refreshable);
         Assert.True(manifest.Auth.Session.RotatesOnUse);
         Assert.True(manifest.Auth.Reauth.Cheap);

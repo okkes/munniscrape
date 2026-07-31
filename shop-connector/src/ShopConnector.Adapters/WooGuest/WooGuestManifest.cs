@@ -81,7 +81,7 @@ internal static class WooGuestManifest
         // requirement - it runs inline in the control plane.
         Runtime = ProviderRuntime.Http,
         Agent = AgentRequirement.Inline,
-        Unattended = true,
+        UnattendedFetch = true,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "woocommerce",

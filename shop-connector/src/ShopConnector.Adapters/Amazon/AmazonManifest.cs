@@ -70,7 +70,17 @@ internal static class AmazonManifest
             // gets to be asked.
             Egress = new EgressRequirement { Country = "NL", Kind = "residential" },
         },
-        Unattended = false,
+        UnattendedFetch = false,
+        // Amazon's widget is interactive and cannot be photographed into an
+        // answer, so the only person who can pass it is one at this browser.
+        LoginNeedsHeadedAgent = true,
+        // None for the same reason as Picnic, by a different route: LogoutAsync
+        // navigates to the sign-out page but returns immediately unless a
+        // browser is already running, and a logout job gets a context that has
+        // just been created. Launching Chromium purely to sign out would hold
+        // an agent for a courtesy, which is the right call - it just means
+        // nothing upstream is told, and the manifest should say so.
+        Logout = LogoutSupport.None,
         SecretCustody = SecretCustody.Client,
         // The sign-in is a multi-screen chain that can stop for an OTP and a
         // visual challenge. Repeating it on every browser visit is not a thing

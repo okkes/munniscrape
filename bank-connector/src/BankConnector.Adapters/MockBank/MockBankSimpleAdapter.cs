@@ -30,7 +30,7 @@ public sealed class MockBankSimpleAdapter : MockBankAdapter
         ManifestVersion = 1,
         Runtime = ProviderRuntime.Http,
         Agent = AgentRequirement.Inline,
-        Unattended = true,
+        UnattendedFetch = true,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = MockBankManifests.LogoRef,

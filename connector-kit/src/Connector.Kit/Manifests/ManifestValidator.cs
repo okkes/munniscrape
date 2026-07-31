@@ -44,9 +44,9 @@ public static partial class ManifestValidator
     {
         // Storing a secret that cannot be used without a human present buys
         // risk and no feature, so the combination is refused outright.
-        if (m.SecretCustody == SecretCustody.Server && !m.Unattended)
+        if (m.SecretCustody == SecretCustody.Server && !m.UnattendedFetch)
         {
-            errors.Add("secret_custody 'server' requires unattended: true - " +
+            errors.Add("secret_custody 'server' requires unattended_fetch: true - " +
                        "storing a secret that needs a human to use is pure risk");
         }
 
@@ -82,6 +82,15 @@ public static partial class ManifestValidator
         {
             errors.Add("runtime 'browser_persistent' is BYO-only: a persistent login " +
                        "belongs on hardware the user controls");
+        }
+
+        // "A human must be at the browser" is meaningless where there is no
+        // browser. Refused at boot rather than left to read as a mysterious
+        // routing constraint on a provider that only ever speaks HTTP.
+        if (m.LoginNeedsHeadedAgent && m.Runtime == ProviderRuntime.Http)
+        {
+            errors.Add("login_needs_headed_agent has no meaning on runtime 'http': " +
+                       "there is no browser for anyone to sit at");
         }
     }
 
@@ -125,9 +134,9 @@ public static partial class ManifestValidator
             errors.Add($"flow '{auth.Flow}' requires at least one auth step");
         }
 
-        if (m.Unattended && !auth.Session.Refreshable && auth.Flow != AuthFlow.DevicePersistent)
+        if (m.UnattendedFetch && !auth.Session.Refreshable && auth.Flow != AuthFlow.DevicePersistent)
         {
-            errors.Add("unattended: true requires a refreshable session - " +
+            errors.Add("unattended_fetch: true requires a refreshable session - " +
                        "without one a human is needed every time by definition");
         }
 

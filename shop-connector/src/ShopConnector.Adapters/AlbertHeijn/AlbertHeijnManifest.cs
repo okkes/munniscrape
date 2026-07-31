@@ -50,7 +50,12 @@ internal static class AlbertHeijnManifest
             // that test before the credentials are even considered.
             Egress = new EgressRequirement { Country = "NL", Kind = "residential" },
         },
-        Unattended = true,               // the refresh token works headlessly
+        UnattendedFetch = true,               // the refresh token works headlessly
+        // Follows the login this manifest describes, so the two cannot drift.
+        // The streamed login relays AH's own page to whoever owns the account,
+        // wall and all, so any agent will do; the typed path meets hCaptcha
+        // itself and can reach a widget nobody remote can answer.
+        LoginNeedsHeadedAgent = !liveLogin,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "ah",

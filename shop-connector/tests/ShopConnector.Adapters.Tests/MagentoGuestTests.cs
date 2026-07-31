@@ -72,7 +72,7 @@ public sealed class MagentoGuestTests
 
         // The honest reading of a credential that never expires: no human is
         // ever needed to keep it working, and nothing rotates on use.
-        Assert.True(Manifest.Unattended);
+        Assert.True(Manifest.UnattendedFetch);
         Assert.True(Manifest.Auth.Session.Refreshable);
         Assert.False(Manifest.Auth.Session.RotatesOnUse);
         Assert.False(Manifest.Auth.Reauth.Cheap);

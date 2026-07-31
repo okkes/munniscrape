@@ -132,7 +132,7 @@ public sealed class PicnicAdapterTests
     {
         var manifest = Adapter().Describe();
 
-        Assert.True(manifest.Unattended);
+        Assert.True(manifest.UnattendedFetch);
 
         // There is no refresh grant, and this is still honest: every response
         // may carry a re-issued x-picnic-auth which the client swaps in, so the

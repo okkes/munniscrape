@@ -148,7 +148,7 @@ public sealed class ManifestTests
 
         // A human signs in roughly daily, so scheduled sync is not offerable
         // and the consumer must not offer it.
-        Assert.False(manifest.Unattended);
+        Assert.False(manifest.UnattendedFetch);
         Assert.False(manifest.Auth.Reauth.Cheap);
         Assert.Equal(SecretCustody.Client, manifest.SecretCustody);
         Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
@@ -177,7 +177,7 @@ public sealed class ManifestTests
 
         // The refresh token works headlessly forever, which is what makes
         // scheduled sync offerable at all.
-        Assert.True(manifest.Unattended);
+        Assert.True(manifest.UnattendedFetch);
         Assert.True(manifest.Auth.Session.Refreshable);
         Assert.Equal(7_776_000, manifest.Auth.Session.TtlSeconds);
         Assert.True(manifest.Auth.Reauth.Cheap);
@@ -244,7 +244,7 @@ public sealed class ManifestTests
         // Still refreshable, and still unattended AFTER the one sign-in -
         // that is the whole point of taking the code rather than a password.
         Assert.True(manifest.Auth.Session.Refreshable);
-        Assert.True(manifest.Unattended);
+        Assert.True(manifest.UnattendedFetch);
 
         var receipts = manifest.Resource("receipts");
         Assert.NotNull(receipts);
@@ -296,7 +296,7 @@ public sealed class ManifestTests
 
         // The refresh token works headlessly, which is what makes scheduled
         // sync offerable at all.
-        Assert.True(manifest.Unattended);
+        Assert.True(manifest.UnattendedFetch);
         Assert.Equal(SecretCustody.Client, manifest.SecretCustody);
         Assert.Equal(WebSupport.Ephemeral, manifest.WebSupport);
         Assert.Equal(7_776_000, manifest.Auth.Session.TtlSeconds);
@@ -374,7 +374,7 @@ public sealed class ManifestTests
         Assert.Equal(SecretCustody.Agent, manifest.SecretCustody);
         Assert.Equal(AuthFlow.DevicePersistent, manifest.Auth.Flow);
         Assert.Empty(manifest.Auth.Steps);
-        Assert.True(manifest.Unattended);
+        Assert.True(manifest.UnattendedFetch);
     }
 
     [Theory]
@@ -393,6 +393,98 @@ public sealed class ManifestTests
         Assert.False(manifest.Agent.Required);
         Assert.Equal(AgentClass.Inline, manifest.Agent.Class);
         Assert.Equal(60, manifest.Limits.MinIntervalSeconds);
+    }
+
+    // ---- the two axes, per provider ----------------------------------------
+
+    /// <summary>
+    /// What the consumer is told about each provider's two independent
+    /// questions: can the FETCH run with nobody there, and can the LOGIN be
+    /// finished by somebody who is not standing at the agent.
+    ///
+    /// They were one field, and it was read as an answer to both. Albert Heijn
+    /// and Lidl declared it true while neither login can finish without a
+    /// person, so the demo client put a green "unattended" chip on a card whose
+    /// Connect button then asked for one.
+    /// </summary>
+    [Theory]
+    // Streams AH's own page to whoever owns the account, wall and all, so any
+    // agent will do - and the refresh token fetches on its own afterwards.
+    [InlineData("ah", true, false)]
+    // The two disagreeing, which is the whole reason they are two fields.
+    [InlineData("coolblue", true, true)]
+    // No browser at all: the sign-in happens in the human's own.
+    [InlineData("lidl", true, false)]
+    [InlineData("picnic", true, false)]
+    [InlineData("woo-guest", true, false)]
+    [InlineData("magento-guest", true, false)]
+    // A human signs in roughly daily, at the browser, when Auth0 walls it.
+    [InlineData("jumbo", false, true)]
+    [InlineData("bol", false, true)]
+    [InlineData("amazon-nl", false, true)]
+    public void Each_provider_answers_the_fetch_and_login_questions_separately(
+        string providerId, bool unattendedFetch, bool loginNeedsHeadedAgent)
+    {
+        var manifest = Registry.RequireManifest(providerId);
+
+        Assert.Equal(unattendedFetch, manifest.UnattendedFetch);
+        Assert.Equal(loginNeedsHeadedAgent, manifest.LoginNeedsHeadedAgent);
+    }
+
+    /// <summary>
+    /// Albert Heijn's headed requirement follows the login it actually
+    /// performs, so the two cannot drift: the streamed page relays the wall to
+    /// a phone, the typed form meets hCaptcha itself.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void Albert_heijns_headed_requirement_follows_which_login_it_is_built_for(
+        bool liveLogin, bool needsHeaded)
+    {
+        Assert.Equal(needsHeaded, AlbertHeijnManifest.Build(liveLogin).LoginNeedsHeadedAgent);
+    }
+
+    // ---- what disconnecting reaches ----------------------------------------
+
+    /// <summary>
+    /// Nothing shipped declares an upstream logout, and that is the honest
+    /// answer rather than an oversight.
+    ///
+    /// Seven of the nine adapters inherit the interface's do-nothing default.
+    /// The two that do implement <c>LogoutAsync</c> cannot reach it: Disconnect
+    /// enqueues the logout job with no material - custody is Client, so the
+    /// token is in the bundle on the user's device - and Picnic throws
+    /// <c>session_expired</c> into its own best-effort catch while Amazon
+    /// returns at a browser that was never started. Until the endpoint opens
+    /// the bundle the consuming app already sends it, declaring anything else
+    /// would be the manifest promising a revocation that never happens.
+    /// </summary>
+    [Theory]
+    [InlineData("picnic")]
+    [InlineData("amazon-nl")]
+    [InlineData("ah")]
+    [InlineData("jumbo")]
+    [InlineData("lidl")]
+    [InlineData("bol")]
+    [InlineData("coolblue")]
+    [InlineData("woo-guest")]
+    [InlineData("magento-guest")]
+    public void No_provider_claims_an_upstream_logout_it_cannot_perform(string providerId)
+    {
+        Assert.Equal(LogoutSupport.None, Registry.RequireManifest(providerId).Logout);
+    }
+
+    /// <summary>
+    /// In particular, nothing claims account-wide revocation. That value exists
+    /// so a consumer can WARN somebody before signing them out of the app on
+    /// their own phone, and declaring it where it is not true would train users
+    /// to ignore the warning.
+    /// </summary>
+    [Fact]
+    public void No_shop_provider_claims_to_revoke_a_whole_account()
+    {
+        Assert.DoesNotContain(Registry.Manifests, m => m.Logout == LogoutSupport.Account);
     }
 
     [Fact]

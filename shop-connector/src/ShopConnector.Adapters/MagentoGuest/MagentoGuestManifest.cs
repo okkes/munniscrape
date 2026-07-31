@@ -108,7 +108,7 @@ internal static class MagentoGuestManifest
         // a session that can go stale. What ends a connection is the order
         // being deleted or the shop moving - both of which surface as a real
         // error rather than as a silent empty result.
-        Unattended = true,
+        UnattendedFetch = true,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "magento",

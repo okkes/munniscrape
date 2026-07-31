@@ -5,12 +5,30 @@ nothing else — no routing, no database, no retry policy, no user-facing
 prose. Adding a provider is a manifest and an adapter, never a change in the
 consuming app.
 
-| Provider | Id | Tier | Agent | Unattended | Custody |
-| --- | --- | --- | --- | --- | --- |
-| Albert Heijn | `ah` | T1 `http` | none (inline) | yes | client |
-| Lidl Plus | `lidl` | T2 `browser_once` | pooled, NL residential | yes | client |
-| Jumbo | `jumbo` | T3 `browser_interactive` | pooled, NL residential | **no** | client |
-| Mock ×6 | `mock-store-*` | T1 / T4 | none / BYO | yes | client / agent |
+Two columns, not one, because they are two questions and they disagree in
+both directions. **Fetch unattended** is whether a stored credential can pull
+data at three in the morning with nobody there. **Login needs a headed agent**
+is whether connecting can hit a wall that only somebody sitting at the agent's
+own browser can pass — false does not mean nobody is needed, it means whoever
+is needed can be reached by relay or by a live view of the provider's own page,
+from anywhere. Albert Heijn is yes/no; Coolblue is yes/yes.
+
+| Provider | Id | Tier | Agent | Fetch unattended | Login needs headed agent | Custody |
+| --- | --- | --- | --- | --- | --- | --- |
+| Albert Heijn | `ah` | T2 `browser_once` | pooled, NL residential | yes | no — its page is streamed to the account's owner | client |
+| Lidl Plus | `lidl` | T1 `http` | none (inline) | yes | no — the sign-in is in the human's own browser | client |
+| Picnic | `picnic` | T1 `http` | none (inline) | yes | no | client |
+| Coolblue | `coolblue` | T2 `browser_once` | pooled | yes | **yes** | client |
+| bol.com | `bol` | T2 `browser_once` | pooled | **no** | **yes** | client |
+| Jumbo | `jumbo` | T3 `browser_interactive` | pooled, NL residential | **no** | **yes** | client |
+| Amazon.nl | `amazon-nl` | T3 `browser_interactive` | pooled | **no** | **yes** | client |
+| Woo / Magento guest | `woo-guest`, `magento-guest` | T1 `http` | none (inline) | yes | no | client |
+| Mock ×6 | `mock-store-*` | T1 / T4 | none / BYO | yes | no | client / agent |
+
+No provider declares an upstream `logout`. Two adapters implement one and
+neither can reach it: disconnect enqueues the logout job with no material,
+because custody is `client` and the token lives in the sealed bundle on the
+user's device.
 
 Register them all:
 

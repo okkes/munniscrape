@@ -59,7 +59,8 @@ internal static class JumboManifest
             // considered.
             Egress = new EgressRequirement { Country = "NL", Kind = "residential" },
         },
-        Unattended = false,              // a human signs in roughly daily
+        UnattendedFetch = false,              // a human signs in roughly daily
+        LoginNeedsHeadedAgent = true,         // and at the browser, when Auth0 walls it
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "jumbo",

@@ -26,7 +26,7 @@ internal static class Make
         ManifestVersion = 1,
         Runtime = ProviderRuntime.Http,
         Agent = AgentRequirement.Inline,
-        Unattended = false,
+        UnattendedFetch = false,
         SecretCustody = SecretCustody.Client,
         Auth = Auth(),
         Resources = [Resource()],

@@ -218,7 +218,14 @@ function providerCard(service, manifest) {
     h('div', { class: 'chips' },
       badge(copy.term('service_kind', manifest.kind).text || service.name, 'service'),
       badge(manifest.country ?? '', 'neutral'),
-      badge(manifest.unattended ? 'unattended' : 'needs a human', manifest.unattended ? 'good' : 'warn'),
+      // Two chips, because they are two facts. The single "unattended" chip
+      // read as a claim about the whole provider, so Albert Heijn and Lidl wore
+      // a green one on a card whose Connect button then demanded a person.
+      badge(manifest.unattended_fetch ? 'syncs on its own' : 'sync needs a human',
+        manifest.unattended_fetch ? 'good' : 'warn'),
+      manifest.login_needs_headed_agent
+        ? badge('connect at the machine', 'warn')
+        : null,
       agent.required
         ? badge(`agent: ${copy.term('agent_class', agent.class).text}`, 'info')
         : badge('no agent', 'neutral')),
@@ -823,7 +830,12 @@ function connectionCard(row) {
       // Purge locally only after the connector confirms, so a failed
       // upstream logout cannot orphan a session that is still live there.
       store.forget(row.id);
-      toast('Disconnected, and the connector logged out upstream.');
+      // Only claimed where the manifest declares it. This said "logged out
+      // upstream" for every provider, including the fourteen where nothing
+      // left the building.
+      toast(manifest?.logout && manifest.logout !== 'none'
+        ? 'Disconnected, and the connector logged out upstream.'
+        : 'Disconnected. The provider was not told - it will expire the session itself.');
     } catch (error) {
       mount(errorSlot, errorBlock(error),
         h('div', { class: 'card-actions' },

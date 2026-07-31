@@ -151,7 +151,9 @@ public sealed class ShippedManifestTests
         Assert.Equal(first.ManifestVersion, second.ManifestVersion);
         Assert.Equal(first.Runtime, second.Runtime);
         Assert.Equal(first.SecretCustody, second.SecretCustody);
-        Assert.Equal(first.Unattended, second.Unattended);
+        Assert.Equal(first.UnattendedFetch, second.UnattendedFetch);
+        Assert.Equal(first.LoginNeedsHeadedAgent, second.LoginNeedsHeadedAgent);
+        Assert.Equal(first.Logout, second.Logout);
         Assert.Equal(first.Auth.Session.TtlSeconds, second.Auth.Session.TtlSeconds);
         Assert.Equal(
             first.Resources.Select(r => r.Id).ToArray(),

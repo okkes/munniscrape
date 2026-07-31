@@ -131,7 +131,7 @@ internal sealed class TestRig : IDisposable
         ManifestVersion = 1,
         Runtime = ProviderRuntime.BrowserInteractive,
         Agent = new AgentRequirement { Required = true, Class = AgentClass.Pooled },
-        Unattended = false,
+        UnattendedFetch = false,
         SecretCustody = SecretCustody.Client,
         Auth = new AuthSpec
         {

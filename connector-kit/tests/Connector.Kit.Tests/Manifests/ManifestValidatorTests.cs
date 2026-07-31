@@ -29,16 +29,62 @@ public sealed class ManifestValidatorTests
     {
         // Storing a secret that needs a human present to use buys risk and
         // no feature.
-        var ex = Rejects(Make.Manifest() with { SecretCustody = SecretCustody.Server, Unattended = false });
+        var ex = Rejects(Make.Manifest() with { SecretCustody = SecretCustody.Server, UnattendedFetch = false });
 
-        Assert.Contains("unattended", ex.Message, StringComparison.Ordinal);
+        // Named for the axis it is actually about. The rule is a claim on the
+        // FETCH loop - a stored secret nothing can use without a human is pure
+        // risk - and the old name let it read as one about the login.
+        Assert.Contains("unattended_fetch: true", ex.Message, StringComparison.Ordinal);
+    }
+
+    // ── the two axes ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// "A human must be at the browser" is meaningless where there is no
+    /// browser, and a manifest that says it is describing a routing constraint
+    /// nothing can satisfy.
+    /// </summary>
+    [Fact]
+    public void Rejects_a_headed_login_requirement_on_a_provider_with_no_browser()
+    {
+        var ex = Rejects(Make.Manifest() with { LoginNeedsHeadedAgent = true });
+
+        Assert.Contains("login_needs_headed_agent", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("there is no browser for anyone to sit at", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The combination the split exists for: a provider whose stored token
+    /// fetches on its own overnight AND whose login can still meet a wall only
+    /// somebody at that machine can pass. One flag could not say both.
+    /// </summary>
+    [Fact]
+    public void Accepts_a_provider_that_fetches_unattended_but_needs_a_human_at_the_browser_to_connect()
+    {
+        ManifestValidator.Validate(
+            (Make.Manifest() with
+            {
+                Runtime = ProviderRuntime.BrowserOnce,
+                Agent = new AgentRequirement { Required = true, Class = AgentClass.Pooled },
+                UnattendedFetch = true,
+                LoginNeedsHeadedAgent = true,
+            })
+            .WithSession(new SessionSpec { TtlSeconds = 86_400, Refreshable = true }));
+    }
+
+    [Fact]
+    public void A_manifest_says_nothing_happens_upstream_on_disconnect_unless_it_says_so()
+    {
+        // The default is the safe claim: most adapters inherit a logout that
+        // does nothing, and a consumer must not tell a user otherwise.
+        Assert.Equal(LogoutSupport.None, Make.Manifest().Logout);
     }
 
     [Fact]
     public void Accepts_server_custody_when_the_provider_really_is_unattended()
     {
         ManifestValidator.Validate(
-            (Make.Manifest() with { SecretCustody = SecretCustody.Server, Unattended = true })
+            (Make.Manifest() with { SecretCustody = SecretCustody.Server, UnattendedFetch = true })
             .WithSession(new SessionSpec { TtlSeconds = 86_400, Refreshable = true }));
     }
 
@@ -76,7 +122,7 @@ public sealed class ManifestValidatorTests
             Runtime = ProviderRuntime.BrowserPersistent,
             Agent = new AgentRequirement { Required = true, Class = AgentClass.Byo },
             SecretCustody = SecretCustody.Agent,
-            Unattended = true,
+            UnattendedFetch = true,
             Auth = Make.Auth() with
             {
                 Flow = AuthFlow.DevicePersistent,
@@ -150,7 +196,7 @@ public sealed class ManifestValidatorTests
     public void Rejects_unattended_without_a_refreshable_session()
     {
         // Without a refresh path a human is needed every time, by definition.
-        var ex = Rejects((Make.Manifest() with { Unattended = true })
+        var ex = Rejects((Make.Manifest() with { UnattendedFetch = true })
             .WithSession(new SessionSpec { TtlSeconds = 86_400, Refreshable = false }));
 
         Assert.Contains("refreshable", ex.Message, StringComparison.Ordinal);
@@ -159,7 +205,7 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void Accepts_unattended_with_a_refreshable_session()
     {
-        ManifestValidator.Validate((Make.Manifest() with { Unattended = true })
+        ManifestValidator.Validate((Make.Manifest() with { UnattendedFetch = true })
             .WithSession(new SessionSpec { TtlSeconds = 86_400, Refreshable = true }));
     }
 

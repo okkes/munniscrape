@@ -51,7 +51,7 @@ public sealed class MockBankSlowAdapter : MockBankAdapter
         ManifestVersion = 1,
         Runtime = ProviderRuntime.BrowserInteractive,
         Agent = MockBankManifests.ResidentialPooled,
-        Unattended = false,
+        UnattendedFetch = false,
         SecretCustody = SecretCustody.Client,
         // The one provider in the fleet that opts out of web. A login this
         // heavy repeated on every visit is exactly the case the opt-out

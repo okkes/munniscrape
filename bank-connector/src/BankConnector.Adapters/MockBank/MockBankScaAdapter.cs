@@ -36,7 +36,7 @@ public sealed class MockBankScaAdapter : MockBankAdapter
         // definition, which in turn is why custody is client and the vault
         // is not offered: storing a secret that cannot be used without a
         // human present is pure risk for zero feature.
-        Unattended = false,
+        UnattendedFetch = false,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = MockBankManifests.LogoRef,

@@ -37,7 +37,7 @@ public sealed class JumboAdapterTests
         ManifestValidator.Validate(manifest);
 
         Assert.Equal(ProviderRuntime.BrowserInteractive, manifest.Runtime);
-        Assert.False(manifest.Unattended);
+        Assert.False(manifest.UnattendedFetch);
         Assert.Equal(86_400, manifest.Auth.Session.TtlSeconds);
 
         // Still false, and now for the right reason: Jumbo's Auth0 tenant does

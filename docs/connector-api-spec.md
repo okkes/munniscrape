@@ -46,7 +46,11 @@ offer, and knows before asking whether a provider can run unattended.
     "class": "pooled",                 // inline | pooled | byo
     "egress": { "country": "NL", "kind": "residential" }
   },
-  "unattended": false,                 // can a fetch run with no human present?
+  "unattended_fetch": false,           // can a FETCH run with no human present?
+  "login_needs_headed_agent": true,    // can the LOGIN hit a wall only somebody
+                                       // at the agent's own browser can pass?
+  "logout": "none",                    // none | session | account - what DELETE
+                                       // /sessions/{id} does upstream, if anything
 
   // ── custody: the user's explicit per-service requirement ─────────
   "secret_custody": "client",          // client | server | agent
@@ -217,8 +221,11 @@ GET /v1/providers/{id}
 `manifest_digest` lets munni cache the catalogue and revalidate cheaply
 (`If-None-Match`). `status.state` is what lets munni degrade honestly —
 *"Jumbo connections are paused, we're fixing it"* instead of a mystery
-spinner — and `unattended` tells munni whether scheduled sync is even
-offerable.
+spinner — and `unattended_fetch` tells munni whether scheduled sync is even
+offerable. It is deliberately about the FETCH alone: `login_needs_headed_agent`
+answers the separate question of whether connecting needs somebody standing at
+the agent, and the two disagree in both directions. Albert Heijn fetches on its
+own overnight and still hands its sign-in to a human; Coolblue does both.
 
 ---
 
@@ -686,7 +693,8 @@ token that makes every later fetch headless.
 // 1. munni asks what Lidl needs
 GET /v1/providers/lidl
 → { "runtime": "browser_once", "secret_custody": "client",
-    "unattended": true, "web_support": "ephemeral",
+    "unattended_fetch": true, "login_needs_headed_agent": false,
+    "logout": "none", "web_support": "ephemeral",
     "auth": { "flow": "password_sms",
               "config": [ {"key":"country","type":"select"}, {"key":"language","type":"select"} ],
               "steps": [ { "fields": [ {"key":"phone","type":"phone"},

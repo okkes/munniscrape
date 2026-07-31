@@ -46,8 +46,8 @@ weaken them:
 1. **`invalid_credentials` is non-retriable as a table constant**, alongside
    a `NeverRetry` set. Three retries locks a real bank account.
 2. **`ManifestValidator` refuses to boot on a lying manifest** — server
-   custody without unattended operation, a browser runtime with no agent,
-   a password field not marked secret, `unattended` without a refreshable
+   custody without unattended fetching, a browser runtime with no agent,
+   a password field not marked secret, `unattended_fetch` without a refreshable
    session. A manifest that overpromises makes the consuming app promise
    users something and then fail.
 3. **Money units are declared, never guessed.** There is deliberately no
@@ -77,7 +77,7 @@ flowchart LR
    and what resources it serves. munni renders forms from it and needs no
    change when a provider is added.
 4. **Custody is a declared property.** `client` (sealed bundle on the
-   user's device, the default), `server` (vault, only where unattended
+   user's device, the default), `server` (vault, only where unattended fetching
    sync is actually possible), or `agent` (the user's own machine — the
    connector never holds anything). Native devices keep bundles; **web
    holds them for the tab session only and re-authenticates each visit** —

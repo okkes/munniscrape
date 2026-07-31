@@ -78,7 +78,7 @@ public sealed class AmazonAdapterTests
         // interactive widgets, which means a human at the browser or nothing;
         // claiming unattended operation would make the consuming app offer
         // scheduled syncing and then fail it at three in the morning.
-        Assert.False(manifest.Unattended, "a wall can arrive with nobody watching");
+        Assert.False(manifest.UnattendedFetch, "a wall can arrive with nobody watching");
         Assert.False(manifest.Auth.Session.Refreshable, "the credential is a cookie jar with no refresh grant");
         Assert.False(manifest.Auth.Reauth.Cheap);
         Assert.Equal(SecretCustody.Client, manifest.SecretCustody);

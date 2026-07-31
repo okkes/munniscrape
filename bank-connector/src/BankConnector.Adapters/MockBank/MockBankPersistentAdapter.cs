@@ -39,7 +39,7 @@ public sealed class MockBankPersistentAdapter : MockBankAdapter
         Runtime = ProviderRuntime.BrowserPersistent,
         Agent = new AgentRequirement { Required = true, Class = AgentClass.Byo },
         // The payoff: no human in the loop after the first authentication.
-        Unattended = true,
+        UnattendedFetch = true,
         SecretCustody = SecretCustody.Agent,
         // A bundle holding only a pointer is safe anywhere, so a web client
         // with a BYO agent gets a fully persistent connection - strictly

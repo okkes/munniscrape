@@ -70,7 +70,12 @@ internal static class CoolblueManifest
         // The refresh token works headlessly, which is the whole thing that
         // makes scheduled sync offerable - and, per the validator, unattended
         // is only allowed to be true because the session below is refreshable.
-        Unattended = true,
+        UnattendedFetch = true,
+        // The two axes disagreeing, which is the whole reason they are two
+        // fields: the refresh token fetches at three in the morning on its own,
+        // and the login it came from can still meet a widget only somebody at
+        // the browser can pass.
+        LoginNeedsHeadedAgent = true,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "coolblue",
