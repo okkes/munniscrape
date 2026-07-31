@@ -94,7 +94,7 @@ offer, and knows before asking whether a provider can run unattended.
       "params": [
         { "key": "since",   "type": "date", "required": true },
         { "key": "until",   "type": "date" },
-        { "key": "include", "type": "enum", "values": ["items"], "multi": true }
+        { "key": "include", "type": "enum", "values": ["items", "raw"], "multi": true }
       ],
       "max_history_days": 365,
       "typical_duration_seconds": 25
@@ -362,6 +362,25 @@ X-Connector-Ticket: tkt_…
 GET /v1/ing/accounts
 X-Connector-Ticket: tkt_…
 ```
+
+#### `include=raw`
+
+Where a resource declares it, `raw` returns the provider's own document beside
+each normalised record, as a `raw` field on the record itself.
+
+It exists so a shape change can be diagnosed from real traffic. When a provider
+renames a field the normalised record simply loses a value and says nothing
+about why; the document that produced it is the thing to read.
+
+Three properties, and all three are the point. It is **opt-in and never a
+default** — raw is strictly the more sensitive of the two, because
+normalisation drops the fields nobody asked for and this puts them back. It is
+stored **on the record's own row**, so the ack that purges the record purges
+the document with it and raw never acquires a lifetime of its own; a later pass
+that does not ask for it clears what an earlier one left. And it is **declared
+per resource**, because an adapter that scraped a page or built a record from
+three calls has no single document to hand back, and a manifest offering one
+would be promising a field that always arrives empty.
 
 A fetch is a job, so it can take a minute and it can *ask a question*
 mid-flight (T3 providers re-authenticate on every run). The response is

@@ -200,6 +200,18 @@ public sealed record FetchResult
     /// </summary>
     public string? Via { get; init; }
 
+    /// <summary>
+    /// The provider's own payload for a record, keyed by its external id.
+    ///
+    /// Populated only when <see cref="ResourceRequest.WantsRaw"/> asked for it.
+    /// An adapter that has nothing meaningful to hand back - one that scraped
+    /// a page, or built a record from three calls - leaves it empty rather than
+    /// inventing a shape, and the caller gets a normalised record with no raw
+    /// beside it, which is the honest answer.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Raw { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
     public int Count => Accounts.Count + Transactions.Count + Receipts.Count;
 
     public static FetchResult Empty { get; } = new();

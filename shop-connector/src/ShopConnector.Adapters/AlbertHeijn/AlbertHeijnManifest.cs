@@ -133,7 +133,18 @@ internal static class AlbertHeijnManifest
                 [
                     new ParamSpec { Key = "since", Type = ParamType.Date, Required = true },
                     new ParamSpec { Key = "until", Type = ParamType.Date },
-                    new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items"], Multi = true },
+                    // raw returns AH's own detail document beside each receipt.
+                    // Declared so the validator will accept it and a consumer
+                    // can see it is offerable; it is never a default, and it
+                    // only means anything alongside items, because the detail
+                    // call is the only place a raw document exists.
+                    new ParamSpec
+                    {
+                        Key = "include",
+                        Type = ParamType.Enum,
+                        Values = ["items", "raw"],
+                        Multi = true,
+                    },
                 ],
                 TypicalDurationSeconds = 25,
                 MaxRecordsPerFetch = 200,

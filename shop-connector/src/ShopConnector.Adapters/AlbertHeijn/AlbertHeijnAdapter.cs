@@ -124,6 +124,11 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
         var receipts = new List<Receipt>(summaries.Count);
 
+        // Only ever populated when the caller asked. AH's detail response is
+        // exactly the document to have in front of you when a field is renamed:
+        // the normalised receipt just loses a value and says nothing about why.
+        var raw = new Dictionary<string, string>(StringComparer.Ordinal);
+
         foreach (var summary in summaries)
         {
             ct.ThrowIfCancellationRequested();
@@ -140,6 +145,12 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
                 items = AlbertHeijnReceiptParser.ParseItems(detail.RootElement, _options);
                 payment = AlbertHeijnReceiptParser.ParsePayment(detail.RootElement, _options);
+
+                // The detail and nothing else: the list page carries every
+                // other receipt in the pass, and handing one caller another
+                // shopper's rows back would be a worse leak than the one this
+                // exists to diagnose.
+                if (request.WantsRaw) raw[summary.Id] = detail.RootElement.GetRawText();
             }
 
             // The list's total against the detail's own lines is the one
@@ -165,6 +176,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
             RefreshedMaterial = session.RefreshedMaterial(ctx.Material),
             Complete = complete,
             Via = "graphql",
+            Raw = raw,
         };
     }
 

@@ -108,4 +108,19 @@ public sealed record ResourceRequest
         Selections.TryGetValue("accounts", out var v) ? v : [];
 
     public bool WantsItems => Include.Contains("items", StringComparer.Ordinal);
+
+    /// <summary>
+    /// The provider's own answer, kept beside the normalised record.
+    ///
+    /// Opt-in and never a default, because raw is strictly the more sensitive
+    /// of the two: normalisation drops the fields nobody asked for, and this
+    /// puts them back. It exists so a shape change can be diagnosed from real
+    /// traffic instead of guessed at - when a provider renames a field, the
+    /// normalised record simply loses a value and says nothing about why.
+    ///
+    /// It rides the same row as the normalised record on purpose, so the ack
+    /// that purges one purges the other and there is no second lifetime for
+    /// anybody to get wrong.
+    /// </summary>
+    public bool WantsRaw => Include.Contains("raw", StringComparer.Ordinal);
 }

@@ -246,6 +246,17 @@ public sealed record JobResultRequest
     public bool Complete { get; init; } = true;
 
     public string? Via { get; init; }
+
+    /// <summary>
+    /// The provider's own payload per record, keyed by external id, when the
+    /// caller asked for it with <c>include=raw</c>.
+    ///
+    /// Carried over the agent wire like everything else here, and staged onto
+    /// the same row as the normalised record - so the ack that purges one
+    /// purges the other, and raw never acquires a lifetime of its own.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Raw { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 public sealed record JobFailRequest

@@ -203,6 +203,19 @@ public sealed class ResultRow
 
     public string PayloadJson { get; set; } = "{}";
 
+    /// <summary>
+    /// The provider's own answer for this record, when <c>include=raw</c> asked
+    /// for it. Null otherwise, which is almost always.
+    ///
+    /// On this row rather than a table of its own, deliberately: the ack and
+    /// the retention sweep both work on rows, so raw is purged by the machinery
+    /// that already exists instead of by a second lifetime somebody has to
+    /// remember. It is the more sensitive of the two - normalisation drops what
+    /// nobody asked for and this puts it back - so it must never outlive the
+    /// record it belongs to.
+    /// </summary>
+    public string? RawJson { get; set; }
+
     /// <summary>Changes when any meaningful value does, so a re-fetch overlaps for free.</summary>
     public string ContentHash { get; set; } = string.Empty;
 

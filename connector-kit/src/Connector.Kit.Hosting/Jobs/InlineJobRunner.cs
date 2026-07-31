@@ -127,6 +127,7 @@ public sealed class InlineJobRunner(
                     SessionMaterial = fetch.RefreshedMaterial,
                     Complete = fetch.Complete,
                     Via = fetch.Via,
+                    Raw = fetch.Raw,
                 };
             }
 

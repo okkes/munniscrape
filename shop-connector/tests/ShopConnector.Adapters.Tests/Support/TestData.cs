@@ -39,15 +39,25 @@ internal static class Requests
     /// reconciliation invariant is checked against.
     /// </summary>
     public static ResourceRequest Receipts(
-        DateOnly? since = null, DateOnly? until = null, bool items = true) => new()
+        DateOnly? since = null, DateOnly? until = null, bool items = true, bool raw = false)
     {
-        ResourceId = "receipts",
-        Since = since,
-        Until = until,
-        Selections = items
-            ? new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { ["include"] = ["items"] }
-            : new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal),
-    };
+        List<string> include = [];
+        if (items) include.Add("items");
+        if (raw) include.Add("raw");
+
+        return new ResourceRequest
+        {
+            ResourceId = "receipts",
+            Since = since,
+            Until = until,
+            Selections = include.Count == 0
+                ? new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                : new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                {
+                    ["include"] = include,
+                },
+        };
+    }
 
     public static DateOnly Day(int year, int month, int day) => new(year, month, day);
 }

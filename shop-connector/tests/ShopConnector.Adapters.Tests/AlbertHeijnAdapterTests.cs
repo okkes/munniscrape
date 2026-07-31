@@ -305,6 +305,72 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Contains("Member is not entitled", error.Detail, StringComparison.Ordinal);
     }
 
+    // ---- raw ---------------------------------------------------------------
+
+    [Fact]
+    public async Task The_providers_own_document_comes_back_only_when_it_was_asked_for()
+    {
+        var handler = new StubHttpHandler(Route);
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = new SessionMaterial { AccessToken = "live" },
+        };
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(since: Requests.Day(2026, 7, 15), raw: true), CancellationToken.None);
+
+        var receipt = Assert.Single(result.Receipts);
+        var raw = Assert.Contains(receipt.ExternalId, result.Raw);
+
+        // AH's own detail document, verbatim - which is the point. When AH
+        // renames a field the normalised receipt simply loses a value and says
+        // nothing about why; this is the thing to read.
+        Assert.Contains("posReceiptDetails", raw, StringComparison.Ordinal);
+
+        // The detail call's answer and nothing else. The list page carries
+        // every other receipt in the pass, and handing one caller another
+        // shopper's rows would be a worse leak than the one this diagnoses.
+        Assert.DoesNotContain("posReceiptsPage", raw, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_fetch_that_did_not_ask_for_raw_carries_none()
+    {
+        var handler = new StubHttpHandler(Route);
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = new SessionMaterial { AccessToken = "live" },
+        };
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(since: Requests.Day(2026, 7, 15)), CancellationToken.None);
+
+        // Raw is strictly the more sensitive of the two: normalisation drops
+        // the fields nobody asked for and this puts them back. Never a default.
+        Assert.NotEmpty(result.Receipts);
+        Assert.Empty(result.Raw);
+    }
+
+    [Fact]
+    public async Task Raw_without_items_has_nothing_to_carry_and_says_so()
+    {
+        var handler = new StubHttpHandler(Route);
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = new SessionMaterial { AccessToken = "live" },
+        };
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(items: false, raw: true), CancellationToken.None);
+
+        // The detail call is the only place a raw document exists, and it only
+        // happens when items were asked for. Empty rather than the list page:
+        // one receipt's row is not the same thing as everybody's.
+        Assert.Equal(2, result.Receipts.Count);
+        Assert.Empty(result.Raw);
+        Assert.Single(handler.Requests);
+    }
+
     // ---- pagination --------------------------------------------------------
 
     [Fact]

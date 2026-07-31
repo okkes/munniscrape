@@ -74,9 +74,22 @@ internal sealed class RotatingStoreAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.Normalizing);
 
+        // Stands in for a provider's own document. Only ever populated when
+        // the caller asked, which is the property the staging layer is meant
+        // to preserve all the way to the response and no further.
+        var raw = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (request.WantsRaw)
+        {
+            foreach (var receipt in receipts)
+            {
+                raw[receipt.ExternalId] = $"{{\"provider_said\":\"{receipt.ExternalId}\"}}";
+            }
+        }
+
         return Task.FromResult(new FetchResult
         {
             Receipts = receipts,
+            Raw = raw,
             // The provider rotated its refresh token upstream, so the bundle the
             // caller is holding is now stale and it must persist the new one.
             RefreshedMaterial = new SessionMaterial
@@ -170,7 +183,13 @@ internal sealed class RotatingStoreAdapter : IProviderAdapter
                 [
                     new ParamSpec { Key = "since", Type = ParamType.Date, Required = true },
                     new ParamSpec { Key = "until", Type = ParamType.Date },
-                    new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items"], Multi = true },
+                    new ParamSpec
+                    {
+                        Key = "include",
+                        Type = ParamType.Enum,
+                        Values = ["items", "raw"],
+                        Multi = true,
+                    },
                     new ParamSpec { Key = InternalParam, Type = ParamType.Text, Internal = true },
                 ],
                 TypicalDurationSeconds = 1,

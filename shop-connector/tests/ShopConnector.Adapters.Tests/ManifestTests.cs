@@ -86,7 +86,32 @@ public sealed class ManifestTests
         Assert.NotNull(include);
         Assert.Equal(ParamType.Enum, include.Type);
         Assert.True(include.Multi, "include is comma-separated");
-        Assert.Equal(new[] { "items" }, include.Values);
+
+        // Every receipts resource offers items. raw is per-provider: it means
+        // handing back the provider's own document, which an adapter that
+        // scraped a page or built a record from three calls has nothing
+        // honest to put in.
+        Assert.Contains("items", include.Values!);
+        Assert.All(include.Values!, value => Assert.Contains(value, new[] { "items", "raw" }));
+    }
+
+    /// <summary>
+    /// Which providers offer their own payload back, and it is declared rather
+    /// than attempted: an adapter whose records come from a scraped page has no
+    /// single document to hand over, and a manifest offering one would be
+    /// promising a field that always arrives empty.
+    /// </summary>
+    [Theory]
+    [InlineData("ah", true)]
+    [InlineData("jumbo", false)]
+    [InlineData("picnic", false)]
+    [InlineData("lidl", false)]
+    public void Raw_is_offered_only_where_a_provider_document_exists_to_offer(
+        string providerId, bool offersRaw)
+    {
+        var include = Registry.RequireManifest(providerId).Resource("receipts")!.Param("include")!;
+
+        Assert.Equal(offersRaw, include.Values!.Contains("raw", StringComparer.Ordinal));
     }
 
     [Theory]

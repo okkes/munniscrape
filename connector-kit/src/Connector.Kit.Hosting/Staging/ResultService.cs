@@ -50,11 +50,17 @@ public sealed class ResultService(
         var now = time.GetUtcNow();
         foreach (var record in staged)
         {
+            // Null unless this pass asked for it. Assigned rather than merged,
+            // so a later fetch without include=raw does not leave an older
+            // pass's raw sitting on a row nobody asked to keep it on.
+            var raw = result.Raw.GetValueOrDefault(record.ExternalId);
+
             if (existing.TryGetValue(record.ExternalId, out var row))
             {
                 // Same content means the caller already has an identical row;
                 // it still moves onto this cursor so one ack clears the pass.
                 row.PayloadJson = record.PayloadJson;
+                row.RawJson = raw;
                 row.ContentHash = record.ContentHash;
                 row.Cursor = cursor;
                 row.JobId = job.Id;
@@ -70,6 +76,7 @@ public sealed class ResultService(
                 Resource = resource,
                 ExternalId = record.ExternalId,
                 PayloadJson = record.PayloadJson,
+                RawJson = raw,
                 ContentHash = record.ContentHash,
                 Cursor = cursor,
                 CreatedAt = now,
@@ -80,7 +87,15 @@ public sealed class ResultService(
         return cursor;
     }
 
-    /// <summary>The records a job produced, newest cursor first, as raw JSON for the response.</summary>
+    /// <summary>
+    /// The records a job produced, newest cursor first, as raw JSON for the
+    /// response.
+    ///
+    /// The provider's own payload is grafted on under <c>raw</c> only where one
+    /// was staged, which happens only where the fetch asked for it. A record
+    /// the adapter could not hand raw back for simply has no such field, rather
+    /// than a null that reads like the provider sent nothing.
+    /// </summary>
     public async Task<StagedPage> ReadAsync(string jobId, CancellationToken ct)
     {
         var rows = await db.Results
@@ -93,7 +108,16 @@ public sealed class ResultService(
         var data = new JsonArray();
         foreach (var row in rows)
         {
-            if (JsonNode.Parse(row.PayloadJson) is { } node) data.Add(node);
+            if (JsonNode.Parse(row.PayloadJson) is not { } node) continue;
+
+            if (node is JsonObject record
+                && row.RawJson is { Length: > 0 } raw
+                && JsonNode.Parse(raw) is { } parsed)
+            {
+                record["raw"] = parsed;
+            }
+
+            data.Add(node);
         }
 
         return new StagedPage(data, rows.Count == 0 ? null : rows[^1].Cursor);

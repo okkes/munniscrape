@@ -294,6 +294,7 @@ public sealed class JobRunner
                         : MaterialFor(fetch.RefreshedMaterial, manifest, profileId),
                     Complete = fetch.Complete,
                     Via = fetch.Via,
+                    Raw = fetch.Raw,
                 };
             }
 
