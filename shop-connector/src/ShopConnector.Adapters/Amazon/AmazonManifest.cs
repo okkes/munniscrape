@@ -74,12 +74,12 @@ internal static class AmazonManifest
         // Amazon's widget is interactive and cannot be photographed into an
         // answer, so the only person who can pass it is one at this browser.
         LoginNeedsHeadedAgent = true,
-        // None for the same reason as Picnic, by a different route: LogoutAsync
-        // navigates to the sign-out page but returns immediately unless a
-        // browser is already running, and a logout job gets a context that has
-        // just been created. Launching Chromium purely to sign out would hold
-        // an agent for a courtesy, which is the right call - it just means
-        // nothing upstream is told, and the manifest should say so.
+        // None, and by a different route from the others: LogoutAsync exists,
+        // but it navigates to the sign-out page and returns immediately unless
+        // a browser is ALREADY running - and a logout job gets a context that
+        // has just been created. Launching Chromium purely to sign out would
+        // hold a pooled agent for a courtesy, which is the right call; it just
+        // means nothing upstream is told, so the manifest says so.
         Logout = LogoutSupport.None,
         SecretCustody = SecretCustody.Client,
         // The sign-in is a multi-screen chain that can stop for an OTP and a

@@ -68,18 +68,14 @@ internal static class PicnicManifest
         // No browser, no human, and a token that renews itself by being used:
         // scheduled sync is offerable, and saying so is true.
         UnattendedFetch = true,
-        // None, and not because LogoutAsync is unimplemented - it is, and it
-        // POSTs /user/logout. It cannot run. Disconnect enqueues the logout job
-        // with no material, because custody is Client: the token lives in the
-        // sealed bundle on the user's device and the control plane does not
-        // have it. PicnicSession then throws session_expired and the adapter's
-        // own best-effort catch swallows it, silently, every time.
-        //
-        // Declaring Session here would be the manifest promising a revocation
-        // that has never happened. The endpoint would first have to open the
-        // bundle the consuming app already sends it - see
-        // DisconnectLogoutTests.A_logout_job_is_handed_no_credential_to_log_out_with.
-        Logout = LogoutSupport.None,
+        // POST /user/logout, with the token from the bundle the caller hands
+        // back on disconnect. Session rather than Account because presenting
+        // one token to a logout endpoint is conventionally what it ends - and
+        // NOT because the blast radius has been watched. If Picnic revokes
+        // account-wide, somebody disconnecting here is being signed out of the
+        // app on their own phone, and this must say Account so a consumer can
+        // warn them first. Worth an hour with a throwaway account.
+        Logout = LogoutSupport.Session,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "picnic",

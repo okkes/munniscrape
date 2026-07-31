@@ -178,6 +178,20 @@ public sealed record ResumeRequest
     public required string Bundle { get; init; }
 }
 
+/// <summary>
+/// The optional body of <c>DELETE /v1/{provider}/sessions/{id}</c>.
+///
+/// Optional because disconnecting must always succeed: a caller that has lost
+/// its bundle, or never held one, is still entitled to remove the connection.
+/// Supplying it is what makes an upstream logout possible at all - custody is
+/// the user's device, so the only copy of the credential is the one they hand
+/// back here, and a provider declaring <c>logout: none</c> ignores it entirely.
+/// </summary>
+public sealed record DisconnectRequest
+{
+    public string? Bundle { get; init; }
+}
+
 public sealed record ResumeResponse
 {
     public required string Ticket { get; init; }

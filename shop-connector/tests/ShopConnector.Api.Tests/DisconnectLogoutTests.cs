@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using Connector.Kit.Hosting.Data;
 using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
 using ShopConnector.Adapters.Mock;
@@ -10,15 +12,19 @@ namespace ShopConnector.Api.Tests;
 /// What disconnecting reaches, and what it does not.
 ///
 /// <c>DELETE /sessions/{id}</c> called <c>LogoutAsync</c> on every provider,
-/// gated on nothing but session state. Fourteen of the sixteen adapters
-/// inherit the interface's do-nothing default, so each of those Disconnects
-/// minted a job row, took a lease and spent an agent round trip to reach a
-/// method that returns a completed task - while the consuming app told the
-/// user, unconditionally, that it had "logged out upstream".
+/// gated on nothing but session state - and could never have worked. Custody is
+/// the user's device, so the control plane holds no credential; the logout job
+/// was enqueued carrying none, and the two adapters that implement a logout
+/// both failed silently on it. Most of the rest inherit a do-nothing default
+/// and were costing a job row, a lease and an agent round trip to reach
+/// <c>Task.CompletedTask</c>, while the consuming app told the user it had
+/// "logged out upstream" every single time.
 ///
-/// The manifest now says which it is, and these assert both halves. The local
-/// purge is unconditional either way: a user disconnecting must always succeed
-/// here, whatever the provider does or does not do about it.
+/// So there are two rules now, and both are asserted here: the manifest says
+/// whether anything upstream happens at all, and the credential to make it
+/// happen has to be handed back by whoever holds it. Neither may ever fail the
+/// disconnect - the user asked to remove a connection, not to prove they can
+/// still authenticate.
 /// </summary>
 [Collection(ShopApiCollection.Name)]
 public sealed class DisconnectLogoutTests(ShopApiFactory factory)
@@ -35,27 +41,76 @@ public sealed class DisconnectLogoutTests(ShopApiFactory factory)
         ["password"] = RotatingStoreAdapter.Password,
     };
 
+    // ---- the credential ----------------------------------------------------
+
     [Fact]
-    public async Task A_provider_that_logs_out_upstream_gets_a_logout_job()
+    public async Task A_declared_logout_given_the_bundle_gets_a_job_that_can_actually_use_it()
     {
         const string provider = RotatingStoreAdapter.ProviderId;
 
         using var http = factory.CreateAuthorizedClient();
         var connection = await Flows.ConnectAsync(
-            http, provider, Flows.NewSubject("logout-declared"), RotatingCredentials);
+            http, provider, Flows.NewSubject("logout-armed"), RotatingCredentials);
 
         Assert.Equal(LogoutSupport.Session, await LogoutSupportOfAsync(http, provider));
 
-        using var disconnect = await http.DeleteAsync($"/v1/{provider}/sessions/{connection.SessionId}");
+        using var disconnect = await DeleteAsync(http, provider, connection.SessionId, connection.Bundle);
         Assert.Equal(HttpStatusCode.NoContent, disconnect.StatusCode);
 
-        // Exactly one, and it is the logout. The login job is the other row on
-        // this session, so a count alone would not tell them apart.
-        Assert.Equal(1, LogoutJobs(connection.SessionId));
+        var logout = Assert.Single(LogoutJobs(connection.SessionId));
+
+        // The whole point. This was null for every logout this platform has
+        // ever run, so PicnicAdapter.LogoutAsync threw session_expired building
+        // its session and swallowed it in its own best-effort catch.
+        Assert.NotNull(logout.MaterialJson);
+
+        // The token this connection actually holds, not merely "something".
+        Assert.Contains(
+            $"rot-access-0-{connection.SessionId}", logout.MaterialJson, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task A_provider_that_logs_out_nowhere_gets_no_job_at_all()
+    public async Task A_declared_logout_with_no_bundle_offered_is_skipped_rather_than_queued_blind()
+    {
+        const string provider = RotatingStoreAdapter.ProviderId;
+
+        using var http = factory.CreateAuthorizedClient();
+        var connection = await Flows.ConnectAsync(
+            http, provider, Flows.NewSubject("logout-unarmed"), RotatingCredentials);
+
+        // The old shape of this call, and the reason nothing ever happened.
+        using var disconnect = await http.DeleteAsync($"/v1/{provider}/sessions/{connection.SessionId}");
+
+        Assert.Equal(HttpStatusCode.NoContent, disconnect.StatusCode);
+        Assert.Empty(LogoutJobs(connection.SessionId));
+    }
+
+    /// <summary>
+    /// A bundle that does not open is a logout that cannot happen - never a
+    /// disconnect that may be refused.
+    /// </summary>
+    [Theory]
+    [InlineData("not-a-bundle")]
+    [InlineData("")]
+    public async Task A_bundle_that_does_not_open_still_removes_the_connection(string bundle)
+    {
+        const string provider = RotatingStoreAdapter.ProviderId;
+
+        using var http = factory.CreateAuthorizedClient();
+        var connection = await Flows.ConnectAsync(
+            http, provider, Flows.NewSubject("logout-garbage"), RotatingCredentials);
+
+        using var disconnect = await DeleteAsync(http, provider, connection.SessionId, bundle);
+
+        Assert.Equal(HttpStatusCode.NoContent, disconnect.StatusCode);
+        Assert.Empty(LogoutJobs(connection.SessionId));
+        Assert.Equal("disabled", await StateOfAsync(http, provider, connection.SessionId));
+    }
+
+    // ---- the declaration ---------------------------------------------------
+
+    [Fact]
+    public async Task A_provider_that_logs_out_nowhere_gets_no_job_even_holding_the_bundle()
     {
         const string provider = MockStoreAdapters.Simple;
 
@@ -65,7 +120,7 @@ public sealed class DisconnectLogoutTests(ShopApiFactory factory)
 
         Assert.Equal(LogoutSupport.None, await LogoutSupportOfAsync(http, provider));
 
-        using var disconnect = await http.DeleteAsync($"/v1/{provider}/sessions/{connection.SessionId}");
+        using var disconnect = await DeleteAsync(http, provider, connection.SessionId, connection.Bundle);
 
         // The user's side is identical - this is not a degraded disconnect.
         Assert.Equal(HttpStatusCode.NoContent, disconnect.StatusCode);
@@ -73,13 +128,17 @@ public sealed class DisconnectLogoutTests(ShopApiFactory factory)
         // And nothing was queued to tell a provider that has no way of being
         // told. This is the row, the lease and the agent round trip that used
         // to be spent reaching Task.CompletedTask.
-        Assert.Equal(0, LogoutJobs(connection.SessionId));
+        Assert.Empty(LogoutJobs(connection.SessionId));
     }
 
+    // ---- the purge ---------------------------------------------------------
+
     /// <summary>
-    /// The purge happens either way. A provider having nothing to say upstream
-    /// must never leave a connection half-removed here - the session is
-    /// disabled and every credential the control plane touched is wiped.
+    /// The purge happens either way, and it happens AFTER the bundle is opened
+    /// and BEFORE the job is queued. Both orderings are load-bearing: a purged
+    /// session's bundle no longer opens, and the purge blanks the material on
+    /// every job the session has - which silently disarmed the logout job when
+    /// it was created first.
     /// </summary>
     [Theory]
     [InlineData(true)]
@@ -93,63 +152,42 @@ public sealed class DisconnectLogoutTests(ShopApiFactory factory)
         var connection = await Flows.ConnectAsync(
             http, provider, Flows.NewSubject("logout-purge"), credentials);
 
-        using (var disconnect = await http.DeleteAsync($"/v1/{provider}/sessions/{connection.SessionId}"))
+        using (var disconnect = await DeleteAsync(http, provider, connection.SessionId, connection.Bundle))
         {
             Assert.Equal(HttpStatusCode.NoContent, disconnect.StatusCode);
         }
 
-        // The row survives on purpose - it is how a user is told what happened
-        // to a connection - but it holds nothing usable any more. The login's
-        // own inputs were already gone: a job going terminal clears them, so
-        // the plaintext window is the run itself and not the row's lifetime.
-        var wiped = Db.Read(factory, db => db.Jobs
-            .Where(j => j.SessionId == connection.SessionId)
-            .Select(j => new { j.InputsJson, j.MaterialJson })
-            .ToList());
+        // The login's own credentials are gone. They were already cleared when
+        // it went terminal - the plaintext window is the run, not the row's
+        // lifetime - and the purge is what guarantees it for anything left.
+        var login = Db.Read(factory, db => db.Jobs
+            .Single(j => j.SessionId == connection.SessionId && j.Kind == JobKind.Login));
 
-        Assert.All(wiped, row =>
-        {
-            Assert.Null(row.InputsJson);
-            Assert.Null(row.MaterialJson);
-        });
+        Assert.Null(login.InputsJson);
+        Assert.Null(login.MaterialJson);
 
-        using var poll = await http.GetAsync($"/v1/{provider}/login/{connection.SessionId}");
-        var body = await poll.JsonAsync();
-        Assert.Equal("disabled", body.Text("state"));
+        // The session row survives on purpose: it is how a user is told what
+        // happened to a connection.
+        Assert.Equal("disabled", await StateOfAsync(http, provider, connection.SessionId));
     }
 
+    // ---- helpers -----------------------------------------------------------
+
     /// <summary>
-    /// Why nothing in the shipped fleet declares a logout, recorded as a test
-    /// rather than as a note somebody has to find.
-    ///
-    /// <c>DELETE /sessions/{id}</c> enqueues the logout job with no material -
-    /// there is nowhere to get it, because every provider here is
-    /// <see cref="SecretCustody.Client"/> and the token lives in the sealed
-    /// bundle on the user's own device. Picnic's <c>LogoutAsync</c> therefore
-    /// throws <c>session_expired</c> building its session and swallows it in
-    /// its own best-effort catch; Amazon's returns at <c>!ctx.Browser.Started</c>
-    /// on a context that has just been created. Both are silent.
-    ///
-    /// The consuming app already POSTs its bundle on Disconnect and the
-    /// endpoint ignores it, so the missing half is small - but opening a
-    /// credential in order to spend it is a decision, not a tidy-up.
+    /// A DELETE carrying the bundle, exactly as the consuming app sends it.
+    /// Awaited inside, because disposing the request before the send completes
+    /// takes its content with it.
     /// </summary>
-    [Fact]
-    public async Task A_logout_job_is_handed_no_credential_to_log_out_with()
+    private static async Task<HttpResponseMessage> DeleteAsync(
+        HttpClient http, string provider, string sessionId, string? bundle)
     {
-        const string provider = RotatingStoreAdapter.ProviderId;
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete, $"/v1/{provider}/sessions/{sessionId}")
+        {
+            Content = JsonContent.Create(new { bundle }),
+        };
 
-        using var http = factory.CreateAuthorizedClient();
-        var connection = await Flows.ConnectAsync(
-            http, provider, Flows.NewSubject("logout-material"), RotatingCredentials);
-
-        using var disconnect = await http.DeleteAsync($"/v1/{provider}/sessions/{connection.SessionId}");
-        Assert.Equal(HttpStatusCode.NoContent, disconnect.StatusCode);
-
-        var logout = Db.Read(factory, db => db.Jobs
-            .Single(j => j.SessionId == connection.SessionId && j.Kind == JobKind.Logout));
-
-        Assert.Null(logout.MaterialJson);
+        return await http.SendAsync(request);
     }
 
     /// <summary>Read from the catalogue, so this asserts what a consumer is actually told.</summary>
@@ -166,6 +204,15 @@ public sealed class DisconnectLogoutTests(ShopApiFactory factory)
         };
     }
 
-    private int LogoutJobs(string sessionId) =>
-        Db.Read(factory, db => db.Jobs.Count(j => j.SessionId == sessionId && j.Kind == JobKind.Logout));
+    private static async Task<string?> StateOfAsync(HttpClient http, string provider, string sessionId)
+    {
+        using var response = await http.GetAsync($"/v1/{provider}/login/{sessionId}");
+        var body = await response.JsonAsync();
+        return body.Text("state");
+    }
+
+    private List<JobRow> LogoutJobs(string sessionId) =>
+        Db.Read(factory, db => db.Jobs
+            .Where(j => j.SessionId == sessionId && j.Kind == JobKind.Logout)
+            .ToList());
 }

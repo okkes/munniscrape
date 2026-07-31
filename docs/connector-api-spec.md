@@ -288,8 +288,20 @@ GET    /v1/{provider}/login/{session_id}/events                → SSE, live pro
 GET    /v1/{provider}/login/{session_id}/challenges/{cid}/image → image/png
 POST   /v1/{provider}/login/{session_id}/answer                { "challenge_id": "chl_…", "value": "492013" }
 POST   /v1/{provider}/login/{session_id}/cancel
-DELETE /v1/{provider}/sessions/{session_id}                     → upstream logout where possible, then purge
+DELETE /v1/{provider}/sessions/{session_id}   { "bundle": "…" }  → upstream logout where possible, then purge
 ```
+
+The body is optional and the bundle inside it is the only way an upstream
+logout can happen at all. Custody is the user's device, so the control plane
+holds no credential to log out *with* — a caller that wants the provider told
+hands its bundle back, and one that has lost it, or never had it, still gets
+its connection removed. A provider whose manifest says `logout: none` ignores
+the bundle entirely; nothing upstream is contacted and the consumer must not
+claim otherwise.
+
+Disconnect always succeeds locally. A bundle that no longer opens, names
+another session, or is simply absent means a logout that cannot be performed —
+never a disconnect that may be refused.
 
 Session states — deliberately small, every terminal state has a
 user-facing meaning:

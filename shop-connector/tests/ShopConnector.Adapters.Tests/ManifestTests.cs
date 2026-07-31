@@ -448,31 +448,30 @@ public sealed class ManifestTests
     // ---- what disconnecting reaches ----------------------------------------
 
     /// <summary>
-    /// Nothing shipped declares an upstream logout, and that is the honest
-    /// answer rather than an oversight.
+    /// What disconnecting reaches, per provider.
     ///
-    /// Seven of the nine adapters inherit the interface's do-nothing default.
-    /// The two that do implement <c>LogoutAsync</c> cannot reach it: Disconnect
-    /// enqueues the logout job with no material - custody is Client, so the
-    /// token is in the bundle on the user's device - and Picnic throws
-    /// <c>session_expired</c> into its own best-effort catch while Amazon
-    /// returns at a browser that was never started. Until the endpoint opens
-    /// the bundle the consuming app already sends it, declaring anything else
-    /// would be the manifest promising a revocation that never happens.
+    /// Picnic is the only one: it POSTs <c>/user/logout</c> with the token from
+    /// the bundle the caller hands back on disconnect. Seven of the nine
+    /// inherit the interface's do-nothing default. Amazon is the interesting
+    /// <c>None</c> - it implements a logout, but one that navigates a browser
+    /// and returns immediately unless a browser is already running, which on a
+    /// freshly-created logout context it never is. Declaring Session there
+    /// would promise a sign-out that does not happen.
     /// </summary>
     [Theory]
-    [InlineData("picnic")]
-    [InlineData("amazon-nl")]
-    [InlineData("ah")]
-    [InlineData("jumbo")]
-    [InlineData("lidl")]
-    [InlineData("bol")]
-    [InlineData("coolblue")]
-    [InlineData("woo-guest")]
-    [InlineData("magento-guest")]
-    public void No_provider_claims_an_upstream_logout_it_cannot_perform(string providerId)
+    [InlineData("picnic", LogoutSupport.Session)]
+    [InlineData("amazon-nl", LogoutSupport.None)]
+    [InlineData("ah", LogoutSupport.None)]
+    [InlineData("jumbo", LogoutSupport.None)]
+    [InlineData("lidl", LogoutSupport.None)]
+    [InlineData("bol", LogoutSupport.None)]
+    [InlineData("coolblue", LogoutSupport.None)]
+    [InlineData("woo-guest", LogoutSupport.None)]
+    [InlineData("magento-guest", LogoutSupport.None)]
+    public void Each_provider_declares_what_disconnecting_does_upstream(
+        string providerId, LogoutSupport expected)
     {
-        Assert.Equal(LogoutSupport.None, Registry.RequireManifest(providerId).Logout);
+        Assert.Equal(expected, Registry.RequireManifest(providerId).Logout);
     }
 
     /// <summary>

@@ -10,9 +10,11 @@ using Connector.Kit.Hosting.Sessions;
 using Connector.Kit.Hosting.Tickets;
 using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
+using Connector.Kit.Security;
 using Connector.Kit.Sessions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -298,6 +300,9 @@ internal static class LoginEndpoints
             HttpContext http,
             string provider,
             string sessionId,
+            // Explicit, because a body is never INFERRED on DELETE - minimal
+            // APIs refuse it outright, and the host will not start.
+            [FromBody] DisconnectRequest? request,
             IProviderRegistry registry,
             SessionService sessions,
             ILeasedJobQueue queue,
@@ -314,29 +319,41 @@ internal static class LoginEndpoints
             // disconnecting must always succeed locally, whatever the provider
             // does or does not do about it.
             //
-            // Gated on the manifest now: fourteen of the sixteen adapters
-            // inherit the interface's do-nothing default, and each of those
-            // Disconnects was minting a job row, taking a lease and spending a
-            // whole agent round trip to reach a method that returns a completed
-            // task. Declaring it also lets the consumer stop telling every user
-            // it "logged out upstream" when for most providers nothing left the
-            // building.
-            if (session.State == SessionState.Active && manifest.Logout != LogoutSupport.None)
+            // Gated on the manifest: most adapters inherit the interface's
+            // do-nothing default, and each of those Disconnects was minting a
+            // job row, taking a lease and spending a whole agent round trip to
+            // reach a method that returns a completed task.
+            //
+            // Opened BEFORE the purge, because the purge disables the session
+            // and a disabled session's bundle no longer opens. Enqueued AFTER
+            // it, because the purge blanks the material on every job this
+            // session has - including, until this was reordered, the logout job
+            // that had just been created to use it.
+            var material = session.State == SessionState.Active && manifest.Logout != LogoutSupport.None
+                ? await LogoutMaterialAsync(sessions, manifest, session, request?.Bundle, ct)
+                : null;
+
+            var config = ConnectorJson.DeserializeOr<IReadOnlyDictionary<string, string>>(
+                session.ConfigJson, new Dictionary<string, string>(StringComparer.Ordinal));
+            var profileId = session.ProfileId;
+
+            await sessions.PurgeAsync(session, ct);
+
+            if (material is not null)
             {
                 await queue.EnqueueAsync(new NewJob
                 {
-                    SessionId = session.Id,
+                    SessionId = sessionId,
                     ProviderId = manifest.Id,
                     Kind = JobKind.Logout,
-                    Config = ConnectorJson.DeserializeOr<IReadOnlyDictionary<string, string>>(
-                        session.ConfigJson, new Dictionary<string, string>(StringComparer.Ordinal)),
-                    ProfileId = session.ProfileId,
+                    Config = config,
+                    Material = material,
+                    ProfileId = profileId,
                 }, ct);
 
                 if (inline.CanRun(manifest)) inline.Dispatch();
             }
 
-            await sessions.PurgeAsync(session, ct);
             db.ChangeTracker.Clear();
 
             return Results.NoContent();
@@ -345,6 +362,41 @@ internal static class LoginEndpoints
         // inference claims a 200 for any handler it cannot read, so a route
         // that never returns one was documented as if it did.
         .Produces(StatusCodes.Status204NoContent);
+    }
+
+    /// <summary>
+    /// The credential to log out with, handed back by whoever holds it.
+    ///
+    /// Custody is the user's device, so the control plane has no copy: a logout
+    /// job built from what is stored here would carry nothing, which is exactly
+    /// why the two adapters that implement a logout had never once performed
+    /// one. The bundle is bound to this session's own subject and manifest
+    /// version, so opening it is also the check that the caller really holds
+    /// this connection.
+    ///
+    /// Null for every reason a logout cannot happen - no bundle offered, a
+    /// bundle that no longer opens, one minted for something else. None of
+    /// those may fail the disconnect: the user asked to remove a connection,
+    /// not to prove they can still authenticate.
+    /// </summary>
+    private static async Task<SessionMaterial?> LogoutMaterialAsync(
+        SessionService sessions,
+        ProviderManifest manifest,
+        SessionRow session,
+        string? bundle,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(bundle)) return null;
+
+        try
+        {
+            var opened = await sessions.OpenAsync(manifest.Id, session.Subject, bundle, ct);
+            return opened.Payload.Material;
+        }
+        catch (ConnectorException)
+        {
+            return null;
+        }
     }
 
     private static async Task RequireWorkAcceptedAsync(ProviderStatusService statuses, ProviderManifest manifest, CancellationToken ct)
