@@ -37,7 +37,13 @@ public sealed class JumboAdapter : IProviderAdapter
     public const string ProviderId = "jumbo";
     public const string ReceiptsResource = "receipts";
 
-    private static readonly ProviderManifest Manifest = JumboManifest.Build();
+    /// <summary>
+    /// Built from the options, so the flow this manifest declares and the login
+    /// this adapter performs cannot drift apart. A manifest promising a password
+    /// form for a login that never asks for one is a consumer drawing two boxes
+    /// nobody can fill.
+    /// </summary>
+    private readonly ProviderManifest Manifest;
 
     private readonly JumboOptions _options;
     private readonly IJumboGraphQlClient _graphql;
@@ -61,6 +67,8 @@ public sealed class JumboAdapter : IProviderAdapter
         _graphql = graphql ?? new HttpJumboGraphQlClient(_options);
         _layout = layout ?? new JumboPrintLayoutParser();
         _time = time ?? TimeProvider.System;
+
+        Manifest = JumboManifest.Build(_options.LiveLogin);
 
         // The policy is shared with Albert Heijn and Lidl Plus; only the
         // selectors and the patience are Jumbo's. Auth0 Universal Login ships
@@ -87,16 +95,130 @@ public sealed class JumboAdapter : IProviderAdapter
 
         // Everything that can fail without contacting anyone, checked before a
         // browser is leased: launching Chromium to discover a blank field
-        // holds an agent for nothing.
-        _ = RequiredInput(ctx, "username");
-        _ = RequiredInput(ctx, "password");
+        // holds an agent for nothing. The streamed login asks for nothing, so
+        // there is nothing to check.
+        if (!_options.LiveLogin)
+        {
+            _ = RequiredInput(ctx, "username");
+            _ = RequiredInput(ctx, "password");
+        }
 
         ctx.Progress(JobStep.OpeningProvider);
 
         var page = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
         var login = new PlaywrightLoginPage(page, Manifest);
+        var watcher = new JumboReturnWatcher(login, _options, _time);
 
-        return await LoginAsync(ctx, login, new JumboReturnWatcher(login, _options, _time), ct).ConfigureAwait(false);
+        return _options.LiveLogin
+            ? await LiveLoginAsync(ctx, login, watcher, ct).ConfigureAwait(false)
+            : await LoginAsync(ctx, login, watcher, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Jumbo's own login page, streamed to whoever owns the account.
+    ///
+    /// This adapter types nothing. It opens the page, starts watching for the
+    /// session, and raises a live view; the human signs in on the page in front
+    /// of them, meets whatever Auth0 puts in the way - the Turnstile box, a
+    /// one-time code, something none of us has seen yet - and deals with it the
+    /// way they would on their own laptop.
+    ///
+    /// The wall is why. A real connect met <c>captcha-provider="auth0_v2"</c>,
+    /// which is Cloudflare Turnstile, and a Turnstile token is minted by its
+    /// own JavaScript in the browser that rendered it. Relaying a picture of it
+    /// buys nothing, because the answer is not a picture - so the browser goes
+    /// to the human instead of the wall coming to us.
+    ///
+    /// What that also buys is the whole custody argument: no username and no
+    /// password is asked for, so none is posted to the connector, written to a
+    /// job's inputs, or held anywhere by anything here. The manifest declares
+    /// no fields and the validator refuses one that does.
+    ///
+    /// <see cref="IJobContext.CredentialSubmitted"/> is deliberately NOT
+    /// latched. It exists so a lost lease does not requeue a login whose
+    /// password already counted against an account, and this path never submits
+    /// one - the attempts are the human's own, on Jumbo's own page.
+    /// </summary>
+    internal async Task<LoginResult> LiveLoginAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(watcher);
+
+        var deviceId = ctx.Material?.DeviceId ?? Guid.NewGuid().ToString();
+
+        await page.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
+
+        ctx.Progress(JobStep.AwaitingHuman);
+
+        // Raised and awaited on its own: the answer to a live view is the empty
+        // one every passive challenge sends, and what actually ends this is the
+        // session appearing. Whichever comes first wins - somebody who signs in
+        // without ever touching the consumer's UI again still finishes.
+        // Linked so the ask can be ENDED, not merely abandoned.
+        using var view = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var asked = ctx.AskAsync(new Challenge
+        {
+            Type = ChallengeType.LiveView,
+            PromptKey = MessageKeys.LiveLogin,
+            ExpiresAt = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds),
+        }, view.Token);
+
+        var poll = TimeSpan.FromSeconds(_options.SettlePollSeconds);
+        var deadline = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds);
+
+        try
+        {
+            while (_time.GetUtcNow() < deadline)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // Back on jumbo.com and off every login marker: the session
+                // exists. The same terminal signal the typed path settles on,
+                // which is why streaming needed no new way to know it is done.
+                if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null)
+                {
+                    ctx.Progress(JobStep.Finalizing);
+                    return await HarvestAsync(ctx, deviceId, ct).ConfigureAwait(false);
+                }
+
+                if (asked.IsCompleted) break;
+            }
+
+            throw ConnectorException.Blocked(
+                "jumbo: the live login ended without reaching a session; the sign-in was not completed");
+        }
+        finally
+        {
+            // However this ended, the sign-in the view existed for is over.
+            // Cancelled rather than left running: this is what stops the
+            // shutter, releases the browser and lets the job finish.
+            await view.CancelAsync().ConfigureAwait(false);
+            _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+        }
+    }
+
+    /// <summary>
+    /// The cookies are the credential, so a login that left none behind did not
+    /// happen however good the URL looked.
+    /// </summary>
+    private async Task<LoginResult> HarvestAsync(IJobContext ctx, string deviceId, CancellationToken ct)
+    {
+        var storageState = await ctx.Browser.StorageStateAsync(ct).ConfigureAwait(false);
+
+        if (JumboCookies.Extract(storageState, _options.CookieDomainSuffix).Count == 0)
+        {
+            throw ConnectorException.ProviderChanged("jumbo: login left no jumbo.com cookies behind");
+        }
+
+        return new LoginResult
+        {
+            Material = new SessionMaterial { StorageState = storageState, DeviceId = deviceId },
+            Account = new ProviderAccount { DisplayName = Manifest.Name },
+            ExpiresAt = _time.GetUtcNow().AddSeconds(JumboManifest.SessionTtlSeconds),
+        };
     }
 
     /// <summary>

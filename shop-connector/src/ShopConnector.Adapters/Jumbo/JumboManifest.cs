@@ -41,7 +41,12 @@ internal static class JumboManifest
     /// a mobile-style public client, which is the one route that would hand
     /// over a real refresh token and move this provider to T2.
     /// </summary>
-    public static ProviderManifest Build() => new()
+    /// <param name="liveLogin">
+    /// Stream Jumbo's own page to the account's owner rather than typing into
+    /// it. Built from the option so the flow this declares and the login the
+    /// adapter performs cannot drift apart.
+    /// </param>
+    public static ProviderManifest Build(bool liveLogin = true) => new()
     {
         Id = JumboAdapter.ProviderId,
         Name = "Jumbo",
@@ -60,46 +65,59 @@ internal static class JumboManifest
             Egress = new EgressRequirement { Country = "NL", Kind = "residential" },
         },
         UnattendedFetch = false,              // a human signs in roughly daily
-        LoginNeedsHeadedAgent = true,         // and at the browser, when Auth0 walls it
-        // The only provider here shaped for it: the Auth0 cookie cannot be
-        // refreshed, so "roughly daily" means asking the same person for the
-        // same password every morning. The connector keeps no copy - the sealed
-        // bundle goes to their device and comes back on the next login.
-        OffersCredentialStore = true,
+        // The streamed login relays Auth0's wall to whoever owns the account,
+        // wherever they are, so any agent will do. Only the typed path has to
+        // meet Turnstile itself - and cannot, which is why it is no longer the
+        // default.
+        LoginNeedsHeadedAgent = !liveLogin,
+        // Offerable only on the typed path, and refused outright on the
+        // streamed one by the validator's own rule: a login that collects no
+        // fields has nothing to seal. The streamed login is the better answer
+        // to "asked again tomorrow" anyway - it does not ask for a password at
+        // all, so there is none to keep.
+        OffersCredentialStore = !liveLogin,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "jumbo",
         NotesKey = MessageKeys.JumboNotes,
         Auth = new AuthSpec
         {
-            Flow = AuthFlow.Password,
-            Steps =
-            [
-                new AuthStep
-                {
-                    Id = "credentials",
-                    LabelKey = MessageKeys.StepCredentials,
-                    Fields =
-                    [
-                        new FieldSpec
-                        {
-                            Key = "username",
-                            Type = FieldType.Text,
-                            Secret = false,
-                            LabelKey = MessageKeys.FieldEmail,
-                            Autofill = "username",
-                        },
-                        new FieldSpec
-                        {
-                            Key = "password",
-                            Type = FieldType.Password,
-                            Secret = true,
-                            LabelKey = MessageKeys.FieldPassword,
-                            Autofill = "current-password",
-                        },
-                    ],
-                },
-            ],
+            Flow = liveLogin ? AuthFlow.RemoteBrowser : AuthFlow.Password,
+            // No fields at all under the streamed login, and that is the
+            // headline: the connector never sees the password. The human types
+            // it into Jumbo's own page, and the validator refuses a
+            // remote_browser flow that declares a field, so this is a boot-time
+            // refusal rather than a promise.
+            Steps = liveLogin
+                ?
+                []
+                :
+                [
+                    new AuthStep
+                    {
+                        Id = "credentials",
+                        LabelKey = MessageKeys.StepCredentials,
+                        Fields =
+                        [
+                            new FieldSpec
+                            {
+                                Key = "username",
+                                Type = FieldType.Text,
+                                Secret = false,
+                                LabelKey = MessageKeys.FieldEmail,
+                                Autofill = "username",
+                            },
+                            new FieldSpec
+                            {
+                                Key = "password",
+                                Type = FieldType.Password,
+                                Secret = true,
+                                LabelKey = MessageKeys.FieldPassword,
+                                Autofill = "current-password",
+                            },
+                        ],
+                    },
+                ],
             // Image for a plain captcha, which can be photographed and typed
             // back. AppApproval for the interactive widgets Auth0 Universal
             // Login actually ships - hCaptcha, reCAPTCHA and Turnstile assets
@@ -113,7 +131,19 @@ internal static class JumboManifest
             // A consumer with no UI for a challenge its provider raises
             // strands the user at the worst possible moment, so all three are
             // declared rather than discovered.
-            Challenges = [ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.MfaCode],
+            //
+            // Under the streamed login the list is just LiveView. The wall is
+            // the reason: Auth0 answered a real connect with
+            // captcha-provider="auth0_v2" - Cloudflare Turnstile - and a
+            // Turnstile token is minted by the widget's own JavaScript, in the
+            // browser that rendered it, against that browser's fingerprint.
+            // There is no picture to photograph out and no tap to replay back;
+            // the relay this adapter had could only ever have refused it.
+            // Streaming does not relay the wall, it relays the BROWSER, so the
+            // human passes it in the page that raised it.
+            Challenges = liveLogin
+                ? [ChallengeType.LiveView]
+                : [ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.MfaCode],
             Session = new SessionSpec
             {
                 TtlSeconds = SessionTtlSeconds,

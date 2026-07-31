@@ -557,6 +557,36 @@ public sealed record JumboOptions
     /// <summary>How long the login may take to resolve into a session, an error or a wall.</summary>
     public int LoginSettleSeconds { get; init; } = 180;
 
+    /// <summary>
+    /// Stream Jumbo's own login page to the human instead of typing into it.
+    ///
+    /// On by default, because the typed login cannot finish. A real connect on
+    /// 2026-07-31 sat on <c>auth.jumbo.com/u/login</c> for the full 180 seconds
+    /// and failed <c>provider_changed</c>; the page was carrying Auth0's
+    /// <c>auth0_v2</c> captcha - Cloudflare Turnstile - whose token is minted
+    /// by its own JavaScript in the browser that rendered it. Nothing can be
+    /// photographed out of that and nothing tapped back in, so the relay had
+    /// only ever had one honest answer to it, and never even got that far
+    /// because no selector matched the widget.
+    ///
+    /// Streaming relays the browser rather than the wall: the account's owner
+    /// sees Jumbo's real page, ticks the box themselves, and types their own
+    /// password - so no credential reaches this platform at all.
+    ///
+    /// False restores the typed login. It stays reachable for the day Jumbo
+    /// drops the wall, and because the transport tests below it are worth
+    /// keeping drivable.
+    /// </summary>
+    public bool LiveLogin { get; init; } = true;
+
+    /// <summary>
+    /// How long a streamed login may stay open. Generous on purpose: it covers
+    /// finding a password manager, a Turnstile round, and possibly a one-time
+    /// code. The job's budget is parked while a human thinks, so this is the
+    /// bound that actually applies.
+    /// </summary>
+    public int LiveLoginSeconds { get; init; } = 900;
+
     /// <summary>How long each settle pass waits before looking at the page again.</summary>
     public int SettlePollSeconds { get; init; } = 5;
 

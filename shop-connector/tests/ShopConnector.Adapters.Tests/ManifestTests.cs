@@ -176,21 +176,48 @@ public sealed class ManifestTests
         Assert.False(manifest.UnattendedFetch);
         Assert.False(manifest.Auth.Reauth.Cheap);
         Assert.Equal(SecretCustody.Client, manifest.SecretCustody);
-        Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
 
-        // Image for a plain captcha, which can be photographed and typed back.
-        // AppApproval for the interactive widgets Auth0 Universal Login
-        // actually ships - hCaptcha, reCAPTCHA and Turnstile assets are all
-        // CONFIRMED-live on jumbo.com's login page and Auth0 activates one on
-        // risk score. A widget cannot be relayed, so the human passes it in
-        // the window the agent opened and the challenge exists only to ask
-        // them and wait. MfaCode because Auth0 supports a one-time code.
-        //
-        // A challenge the consumer has no UI for is the worst moment to
-        // discover one, so all three are declared rather than found out.
+        // Streamed, since a real connect met Auth0's auth0_v2 captcha -
+        // Cloudflare Turnstile - whose token is minted by its own JavaScript in
+        // the browser that rendered it. There is no picture to relay out and no
+        // tap to replay back, so the browser goes to the human instead.
+        Assert.Equal(AuthFlow.RemoteBrowser, manifest.Auth.Flow);
+
+        // No fields at all, and that is the headline: the connector never sees
+        // the password. The validator refuses a remote_browser flow that
+        // declares one, so this is a boot-time refusal rather than a promise.
+        Assert.Empty(manifest.Auth.Steps);
+        Assert.Empty(manifest.Auth.AllFields());
+
+        // One challenge, because there is only one thing to raise: the page
+        // itself. The typed path's Image/AppApproval/MfaCode list described
+        // walls this adapter met on the human's behalf; a streamed login puts
+        // them in front of the wall instead.
+        Assert.Equal([ChallengeType.LiveView], manifest.Auth.Challenges);
+    }
+
+    /// <summary>
+    /// The typed login stays reachable for the day Jumbo drops the wall, and
+    /// its manifest still describes itself honestly - two fields, the three
+    /// walls it would have to meet alone, and the headed agent it would need.
+    /// </summary>
+    [Fact]
+    public void Jumbos_typed_login_still_declares_the_form_and_the_walls_it_would_face()
+    {
+        var manifest = JumboManifest.Build(liveLogin: false);
+
+        Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
+        Assert.Equal(["username", "password"], manifest.Auth.AllFields().Select(f => f.Key));
         Assert.Equal(
             new[] { ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.MfaCode },
             manifest.Auth.Challenges);
+
+        // Both flip with the flow. The typed path meets Turnstile itself, so it
+        // needs somebody at that browser - and it is the only shape where a
+        // stored credential is even offerable, because it is the only one that
+        // collects one.
+        Assert.True(manifest.LoginNeedsHeadedAgent);
+        Assert.True(manifest.OffersCredentialStore);
     }
 
     // ---- Lidl: the T2 flagship --------------------------------------------
@@ -443,8 +470,9 @@ public sealed class ManifestTests
     [InlineData("picnic", true, false)]
     [InlineData("woo-guest", true, false)]
     [InlineData("magento-guest", true, false)]
-    // A human signs in roughly daily, at the browser, when Auth0 walls it.
-    [InlineData("jumbo", false, true)]
+    // A human signs in roughly daily - but on their own screen now, wherever
+    // they are, because Jumbo's page is streamed to them.
+    [InlineData("jumbo", false, false)]
     [InlineData("bol", false, true)]
     [InlineData("amazon-nl", false, true)]
     public void Each_provider_answers_the_fetch_and_login_questions_separately(

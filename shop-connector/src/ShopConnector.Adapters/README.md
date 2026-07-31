@@ -20,7 +20,7 @@ from anywhere. Albert Heijn is yes/no; Coolblue is yes/yes.
 | Picnic | `picnic` | T1 `http` | none (inline) | yes | no | client |
 | Coolblue | `coolblue` | T2 `browser_once` | pooled | yes | **yes** | client |
 | bol.com | `bol` | T2 `browser_once` | pooled | **no** | **yes** | client |
-| Jumbo | `jumbo` | T3 `browser_interactive` | pooled, NL residential | **no** | **yes** | client |
+| Jumbo | `jumbo` | T3 `browser_interactive` | pooled, NL residential | **no** | no — its page is streamed too | client |
 | Amazon.nl | `amazon-nl` | T3 `browser_interactive` | pooled | **no** | **yes** | client |
 | Woo / Magento guest | `woo-guest`, `magento-guest` | T1 `http` | none (inline) | yes | no | client |
 | Mock ×6 | `mock-store-*` | T1 / T4 | none / BYO | yes | no | client / agent |
@@ -43,6 +43,23 @@ provider changes is a deploy-time edit rather than a release.
 ---
 
 ## Read this before enabling Jumbo
+
+**The login is streamed, and the typed one no longer runs by default.** A real
+connect on 2026-07-31 sat on `auth.jumbo.com/u/login` for the full 180 seconds
+and failed `provider_changed`. The page was carrying Auth0's
+`captcha-provider="auth0_v2"` — Cloudflare Turnstile — and a Turnstile token is
+minted by the widget's own JavaScript in the browser that rendered it, against
+that browser. There is no picture to relay out and no tap to replay back, so
+the relay this adapter had could only ever have refused it. It never even got
+that far: no selector matched the widget, so no challenge was raised at all and
+the settle loop simply ran out.
+
+`JumboOptions.LiveLogin` therefore ships `true`. The account's owner sees
+Jumbo's real page, passes Turnstile themselves and types their own password, so
+no credential reaches this platform. `JumboReturnWatcher` was already the
+terminal signal — back on `jumbo.com` and off every login marker — so streaming
+needed no new way to know it had finished. Set it `false` to restore the typed
+form for the day Jumbo drops the wall.
 
 **Jumbo's GraphQL protocol is not settled, and the adapter cannot be called
 correct until a live capture says so.** This is the blocking discovery task

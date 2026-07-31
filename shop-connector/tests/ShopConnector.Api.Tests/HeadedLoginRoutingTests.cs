@@ -30,12 +30,17 @@ namespace ShopConnector.Api.Tests;
 [Collection(ShopApiCollection.Name)]
 public sealed class HeadedLoginRoutingTests(ShopApiFactory factory)
 {
-    /// <summary>Browser-interactive, pooled, and declares login_needs_headed_agent.</summary>
-    private const string HeadedOnlyProvider = "jumbo";
+    /// <summary>
+    /// Browser-tier, pooled, and declares login_needs_headed_agent: bol's
+    /// reCAPTCHA is interactive and mints its token in the browser that
+    /// rendered it, so nobody remote can pass it.
+    /// </summary>
+    private const string HeadedOnlyProvider = "bol";
 
     /// <summary>
     /// Also browser-tier and pooled, but its login is streamed to the account's
-    /// owner wherever they are - so any agent may take it.
+    /// owner wherever they are - so any agent may take it. Jumbo joined this
+    /// side once Auth0's Turnstile made the typed path unfinishable.
     /// </summary>
     private const string RelayableProvider = "ah";
 

@@ -1,82 +1,84 @@
-# Reproducing the Jumbo login stall
+# The Jumbo login stall — what it was
 
-A real connect ends in `provider_changed` after 180 seconds. The error is a
-settle timeout, not a refusal: `JumboReturnWatcher` polls the page URL and never
-sees a signed-in one, so `SettleAsync` runs out its budget and gives up. What it
-does not tell us is *where* the sign-in stopped — and that needs somebody
-watching the browser, because every signal the agent has says only "still on a
-login URL".
+**Resolved 2026-07-31.** Kept because the diagnosis is the useful part, and
+because the same wall will appear on another provider eventually.
 
-This is the run to make. It needs a headed browser and a real Jumbo account.
+## The symptom
 
-## What "signed in" means to the code
-
-`JumboReturnWatcher.IsSignedIn` (JumboAdapter.cs) returns true only when both
-halves hold:
-
-1. the URL contains `jumbo.com` (`JumboOptions.CookieDomainSuffix`), **and**
-2. it contains **none** of `JumboOptions.LoginUrlMarkers`:
-   `auth.jumbo.com`, `/u/login`, `/authorize`, `/api/auth/login`,
-   `/account/inloggen`.
-
-So the failure is: after 180 seconds (`LoginSettleSeconds`) the URL still
-matched a marker, or was not on `jumbo.com` at all.
-
-## Run it
-
-The local compose stack already runs the agent headed under Xvfb
-(`ConnectorAgent__Headless: "false"` in `deploy/docker-compose.local.yml`) — but
-for this you want to *see* the browser, so run the agent on the host with a real
-display rather than in the container:
+A real connect failed `provider_changed` after 180 seconds. The recorded detail
+carried the one thing that mattered:
 
 ```
-ConnectorAgent__Headless=false
-ConnectorAgent__Providers__0=jumbo
+jumbo: the login neither produced a session nor stated an error within 180s;
+last url was 'https://auth.jumbo.com/u/login?state=…'
 ```
 
-Then connect through the demo client, or POST the login directly:
+Still on Auth0's login screen after three minutes, and the `challenges` table
+held **zero rows** for that job — so the adapter had not seen a wall at all.
 
-```http
-POST /v1/jumbo/login
-{ "subject": "u_repro", "inputs": { "username": "…", "password": "…" } }
+## What it actually was
+
+Opening the real page headed and dumping the DOM ruled out every cheap
+explanation at once:
+
+- `input#username`, `input#password` and `button[type='submit']` each matched
+  exactly one visible element. Selectors were fine.
+- One submit button on the page (`name=action value=default`, "Inloggen"), so
+  nothing was clicking the wrong control.
+- Both credentials on one screen, so the two-second password probe was not the
+  problem either.
+
+The answer was a hidden field and a container:
+
+```html
+<input name="captcha" type="hidden">
+<div data-captcha-provider="auth0_v2" data-captcha-sitekey="0x4AAAAAA…"
+     class="ulp-captcha-container">
 ```
 
-Chromium opens `https://www.jumbo.com/account/inloggen`
-(`JumboOptions.LoginUrl`), which 302s to `/api/auth/login` and on to Auth0.
+`auth0_v2` is Auth0's name for **Cloudflare Turnstile** — the `0x4AAAAAA…`
+sitekey prefix is the giveaway. It renders with `render=explicit`, so the widget
+appears only when Auth0's risk score asks for it, which is why a probe from a
+residential line often sees nothing and a pooled agent sees it every time.
 
-## Watch for these five, in order
+The adapter's `InteractiveCaptchaSelectors` did list
+`iframe[src*='challenges.cloudflare.com']`, but nothing matched in practice and
+the settle loop timed out instead.
 
-Note the URL at each step — the URL is the only thing the watcher reads.
+## Why detection was not the fix
 
-1. **The consent wall.** Dismissal is best-effort and its selectors are marked
-   UNCONFIRMED. If a wall is covering the form, the fills below silently miss.
-2. **The username field.** `input#username` was on the page on 2026-07-28.
-   Does it still exist, and did the value land in it?
-3. **The password screen.** Auth0 can split the two credentials across two
-   screens; the adapter probes for the password field for only
-   `PasswordProbeMs` = 2000 ms after filling the username. If Auth0 now takes
-   longer than two seconds to render screen two, the password is never typed
-   and the form sits there — **this is the most likely cause.**
-4. **The wall.** hCaptcha, reCAPTCHA and Turnstile assets are all confirmed on
-   the page and Auth0 activates one on risk score. An interactive widget cannot
-   be relayed, which is why Jumbo now declares `login_needs_headed_agent`.
-   Did one appear, and was it answered?
-5. **The final URL.** If the sign-in *succeeded* in the browser and the job
-   still failed, this is the interesting case: the landing URL still matches a
-   marker. Copy it verbatim. Fixing that is a one-line change to
-   `LoginUrlMarkers` rather than anything structural.
+Fixing the selector would only have changed the error from `provider_changed`
+to `blocked_by_provider`. A Turnstile token is minted by the widget's own
+JavaScript, in the browser that rendered it, bound to that browser. There is no
+picture to photograph out and no tap to replay back — the relay had exactly one
+honest answer to an interactive widget, and that answer is "no".
 
-## What to bring back
+And solving it is not on the table. This platform's line is written into its
+design: challenges are **relayed, never solved**. Nobody here reads a grid,
+scores one, or asks a service to.
 
-The URL at each of the five steps, and which of them the browser actually
-reached. That is enough to tell the three real possibilities apart:
+## The fix
 
-- **stopped at 3** → widen `PasswordProbeMs`, or probe rather than time-box.
-- **stopped at 4** → the wall is real; the manifest already routes this login to
-  a headed agent, so the remaining question is relay versus a streamed login.
-- **reached 5 and still failed** → a marker is over-matching a signed-in URL.
-  The cheapest fix in the file.
+Stream the browser instead of relaying the wall, exactly as Albert Heijn does.
+`JumboOptions.LiveLogin` ships `true`: the page goes to the account's owner,
+who passes Turnstile in the browser that raised it and types their own password.
 
-`JumboLoginTests` already drives all of this offline through `ILoginPage` and
-`IRedirectWaiter`, so whatever the live run shows can be pinned as a test
-without a live account afterwards.
+What it changed:
+
+| | before | after |
+| --- | --- | --- |
+| `auth.flow` | `password` | `remote_browser` |
+| declared fields | username, password | none |
+| `auth.challenges` | image, app_approval, mfa_code | live_view |
+| `login_needs_headed_agent` | true | false |
+| `offers_credential_store` | true | false — nothing is typed, so nothing to store |
+
+`JumboReturnWatcher` needed no change: "back on `jumbo.com` and off every login
+marker" was already the terminal signal, which is why streaming slotted in
+without inventing one.
+
+## If it regresses
+
+The failure detail still names the last URL, and `challenges` still records
+what was raised. Those two together told the whole story without a live watch,
+and would again.
