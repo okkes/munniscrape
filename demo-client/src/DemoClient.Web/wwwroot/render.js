@@ -295,7 +295,29 @@ function receipt(row) {
         h('table', { class: 'items-table' },
           h('thead', {}, h('tr', {},
             h('th', {}, 'Item'), h('th', {}, 'Qty'), h('th', {}, 'Unit'), h('th', {}, 'Total'))),
-          h('tbody', {}, items.map(receiptItem)))));
+          h('tbody', {}, items.map(receiptItem)))),
+
+    rawBlock(row));
+}
+
+/**
+ * The provider's own document, where `include=raw` asked for one.
+ *
+ * Collapsed, and absent entirely when nothing was asked for or the adapter had
+ * no single document to hand back. It is the thing to read when a normalised
+ * field goes missing: the record above says only that a value is gone, and this
+ * says what actually arrived.
+ *
+ * Rendered last and behind a disclosure on purpose - it is the more sensitive
+ * of the two, because normalisation drops the fields nobody asked for and this
+ * puts them back.
+ */
+function rawBlock(row) {
+  if (!row.raw) return null;
+
+  return h('details', { class: 'items raw' },
+    h('summary', {}, 'provider payload'),
+    h('pre', { class: 'raw-json' }, JSON.stringify(row.raw, null, 2)));
 }
 
 function receiptItem(item) {

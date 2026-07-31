@@ -1178,6 +1178,22 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+/* The provider's own document. Scrolls inside its own box rather than
+   stretching the card - a raw receipt is long, and a page that grows sideways
+   to fit one is a page nobody can read the rest of. */
+.raw-json {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  max-height: 22rem;
+  overflow: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre;
+}
+
 .items-table th,
 .data-table th {
   text-align: left;
