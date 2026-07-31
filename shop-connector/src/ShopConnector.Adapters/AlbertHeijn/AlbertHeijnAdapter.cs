@@ -209,12 +209,36 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         ctx.Progress(JobStep.OpeningProvider);
 
         var page = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
-        await page.GotoAsync(AuthorizeUrl()).ConfigureAwait(false);
 
-        // Attached before the human can touch anything. AH's redirect arrives
-        // the instant the last step passes, and a watcher attached afterwards
-        // misses the one event the whole login turns on.
+        // Attached before the page is navigated, and so before the human can
+        // touch anything. AH's redirect arrives the instant the last step
+        // passes, and a watcher attached afterwards misses the one event the
+        // whole login turns on - including the case where AH still remembers
+        // this browser and answers the authorize call with the callback.
         using var watcher = new RedirectWatcher(page, _options.RedirectUri, _time);
+
+        return await LiveCodeAsync(ctx, new PlaywrightLoginPage(page, Manifest), watcher, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The streamed login, behind the seam.
+    ///
+    /// Internal rather than private for the reason <see cref="SettleAsync"/>
+    /// is, and more urgently: this is the path production takes by default, so
+    /// every promise the summary above makes - that nothing is typed, that no
+    /// credential is latched, that the view is ENDED rather than abandoned when
+    /// the redirect lands - was until now asserted by nobody. The typed path
+    /// below it had the whole suite; this had a live account and a human.
+    /// </summary>
+    internal async Task<string> LiveCodeAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(watcher);
+
+        await page.GotoAsync(AuthorizeUrl(), ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.AwaitingHuman);
 
@@ -242,32 +266,45 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         var poll = TimeSpan.FromSeconds(_options.RedirectPollSeconds);
         var deadline = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds);
 
-        while (_time.GetUtcNow() < deadline)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-
-            if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is { } captured)
+            while (_time.GetUtcNow() < deadline)
             {
-                // The sign-in is done, so the view is over. Cancelled rather
-                // than left running: this is what stops the shutter, releases
-                // the browser and lets the job finish. Its exception is still
-                // observed, because an unobserved one on a job that SUCCEEDED
-                // is a crash report for something that went right.
-                await view.CancelAsync().ConfigureAwait(false);
-                _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+                ct.ThrowIfCancellationRequested();
 
-                ctx.Progress(JobStep.Authenticating);
+                if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is { } captured)
+                {
+                    ctx.Progress(JobStep.Authenticating);
 
-                return ExtractCode(captured)
-                       ?? throw ConnectorException.ProviderChanged(
-                           "ah: the callback carried no authorization code");
+                    return ExtractCode(captured)
+                           ?? throw ConnectorException.ProviderChanged(
+                               "ah: the callback carried no authorization code");
+                }
+
+                if (asked.IsCompleted) break;
             }
 
-            if (asked.IsCompleted) break;
+            throw ConnectorException.Blocked(
+                "ah: the live login ended without reaching the callback; the sign-in was not completed");
         }
-
-        throw ConnectorException.Blocked(
-            "ah: the live login ended without reaching the callback; the sign-in was not completed");
+        finally
+        {
+            // However this ended, the sign-in the view existed for is over.
+            // Cancelled rather than left running: this is what stops the
+            // shutter, releases the browser and lets the job finish. An agent
+            // runs one job at a time, so a login that never lets go wedges
+            // every later one behind it.
+            //
+            // In the finally rather than on the success path alone, because
+            // the window running out is the case where somebody IS still
+            // looking at the picture - and disposing this source merely
+            // unlinks it from the job's token, which would orphan the ask
+            // instead of ending it. Its exception is still observed: an
+            // unobserved one for a view we deliberately closed is a crash
+            // report for something that went right.
+            await view.CancelAsync().ConfigureAwait(false);
+            _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+        }
     }
 
     private async Task<string> ObtainCodeAsync(IJobContext ctx, CancellationToken ct)

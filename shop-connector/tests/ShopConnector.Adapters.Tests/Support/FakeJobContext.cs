@@ -22,6 +22,7 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
 
     private readonly List<JobStep> _steps = [];
     private readonly List<Challenge> _asked = [];
+    private readonly List<CancellationToken> _askTokens = [];
     private readonly Lazy<string> _workDirectory;
 
     public FakeJobContext(HttpMessageHandler? handler = null)
@@ -83,6 +84,19 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
     public IReadOnlyList<Challenge> Asked => _asked;
 
     /// <summary>
+    /// The token each ask was made under, in the same order as
+    /// <see cref="Asked"/>.
+    ///
+    /// The difference between ending a passive challenge and walking away from
+    /// it. A live view is a browser, a shutter and an occupied agent; the
+    /// adapter that abandons its ask leaves all three running for the rest of
+    /// the window after the login has already succeeded, and an observer
+    /// outside the adapter cannot tell that apart from a clean finish. A
+    /// cancelled token here is the proof it was ended.
+    /// </summary>
+    public IReadOnlyList<CancellationToken> AskTokens => _askTokens;
+
+    /// <summary>
     /// The latch that decides whether a lost lease requeues a job or fails
     /// it. Asserted directly, because "a login that may already have counted
     /// is never retried" is the rule that matters most in the platform.
@@ -99,6 +113,7 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
         ct.ThrowIfCancellationRequested();
 
         _asked.Add(challenge);
+        _askTokens.Add(ct);
 
         if (AnswersNothing)
         {
