@@ -81,6 +81,18 @@ public sealed class SessionRow
     /// forgets what it has delivered.
     /// </summary>
     public string? PendingBundle { get; set; }
+
+    /// <summary>
+    /// The sealed credentials waiting to be collected, where the provider
+    /// offers a credential store.
+    ///
+    /// Handed over and cleared in the same breath as
+    /// <see cref="PendingBundle"/>, and ciphertext for the same reason: the
+    /// control plane is the only party that can read it and it keeps no copy
+    /// once delivered. Null for every provider that does not offer one, which
+    /// is all but the ones whose session cannot be refreshed.
+    /// </summary>
+    public string? PendingCredentialBundle { get; set; }
 }
 
 /// <summary>

@@ -165,6 +165,63 @@ public sealed class SessionService(
     }
 
     /// <summary>
+    /// Seals what the human typed, so their own device can offer it back next
+    /// time instead of asking them again.
+    ///
+    /// Null unless the provider declares a credential store and the login
+    /// actually collected something - a run that reused a stored bundle, or a
+    /// streamed login that asked for nothing, has nothing new to seal.
+    ///
+    /// Its life is <see cref="ConnectorTimeouts.CredentialBundleDays"/> and not
+    /// the session's: a session bundle expires when the provider's session
+    /// does, and a password has no such natural end. It is the credential that
+    /// does not rotate and cannot be revoked from here, so the only bound
+    /// available is one we choose.
+    /// </summary>
+    public string? SealCredentials(SessionRow session, IReadOnlyDictionary<string, string> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(inputs);
+
+        var manifest = registry.RequireManifest(session.ProviderId);
+        if (!manifest.OffersCredentialStore || inputs.Count == 0) return null;
+
+        var now = time.GetUtcNow();
+
+        return codec.SealCredentials(
+            new CredentialPayload
+            {
+                SessionId = session.Id,
+                Provider = session.ProviderId,
+                IssuedAt = now,
+                ExpiresAt = now.AddDays(_options.Timeouts.CredentialBundleDays),
+                Inputs = inputs,
+            },
+            Binding(session.ProviderId, session.Subject, session.ManifestVersion));
+    }
+
+    /// <summary>
+    /// Reads back a credential bundle this connector sealed, for one subject.
+    ///
+    /// The subject is the authorisation. It is part of the AAD, so a blob
+    /// cannot be redeemed by naming somebody else's session id - which matters
+    /// here more than anywhere, because what comes out is a password rather
+    /// than a scoped token.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> OpenCredentials(string providerId, string subject, string bundle)
+    {
+        var manifest = registry.RequireManifest(providerId);
+        var payload = codec.OpenCredentials(bundle, Binding(manifest.Id, subject, manifest.ManifestVersion));
+
+        if (!string.Equals(payload.Provider, manifest.Id, StringComparison.Ordinal))
+        {
+            throw ConnectorException.SessionExpired("credential bundle names another provider");
+        }
+
+        return payload.Inputs;
+    }
+
+    /// <summary>
     /// Opens a bundle for a subject and returns the session it names.
     ///
     /// Every rejection - wrong subject, wrong provider, stale manifest

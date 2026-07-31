@@ -20,6 +20,20 @@ namespace Connector.Kit.Security;
 public sealed class SealedBundleCodec
 {
     private const string Prefix = "sb_v1";
+
+    /// <summary>
+    /// A credential bundle's own prefix.
+    ///
+    /// Distinct so the two kinds can never be confused for one another. They
+    /// share a key, an algorithm and their associated data, so without this a
+    /// credential bundle handed to a route expecting a session bundle would
+    /// decrypt perfectly and then fail somewhere further in, deserialising into
+    /// a shape it is not. The prefix check is the first thing
+    /// <see cref="Open"/> does, so the wrong kind is refused as malformed -
+    /// which surfaces as the same session_expired everything else here does.
+    /// </summary>
+    private const string CredentialPrefix = "cb_v1";
+
     private const int NonceBytes = 12;
     private const int TagBytes = 16;
 
@@ -32,7 +46,26 @@ public sealed class SealedBundleCodec
         _time = time ?? TimeProvider.System;
     }
 
-    public string Seal(BundlePayload payload, BundleBinding binding)
+    public string Seal(BundlePayload payload, BundleBinding binding) =>
+        Seal(payload, binding, Prefix);
+
+    /// <summary>
+    /// Seals what the human typed, for their own device to hold.
+    ///
+    /// The same mechanism as a session bundle and for the same reason: the
+    /// connector stays the only party that can read it, and the AAD binds it to
+    /// one provider, one subject and one manifest version - so a blob lifted
+    /// from one device is useless for anybody else.
+    /// </summary>
+    public string SealCredentials(CredentialPayload payload, BundleBinding binding) =>
+        Seal(payload, binding, CredentialPrefix);
+
+    /// <summary>As <see cref="Open"/>, for a credential bundle.</summary>
+    public CredentialPayload OpenCredentials(string bundle, BundleBinding binding) =>
+        Open<CredentialPayload>(bundle, binding, CredentialPrefix);
+
+    private string Seal<T>(T payload, BundleBinding binding, string prefix)
+        where T : ISealedPayload
     {
         ArgumentNullException.ThrowIfNull(payload);
 
@@ -46,7 +79,7 @@ public sealed class SealedBundleCodec
         gcm.Encrypt(nonce, plaintext, ciphertext, tag, AssociatedData(binding));
         CryptographicOperations.ZeroMemory(plaintext);
 
-        return string.Join('.', Prefix, kid, B64(nonce), B64(ciphertext), B64(tag));
+        return string.Join('.', prefix, kid, B64(nonce), B64(ciphertext), B64(tag));
     }
 
     /// <summary>
@@ -55,12 +88,16 @@ public sealed class SealedBundleCodec
     /// All of them surface as the same <see cref="ErrorCode.SessionExpired"/>
     /// so a probing caller learns nothing from the distinction.
     /// </summary>
-    public BundlePayload Open(string bundle, BundleBinding binding)
+    public BundlePayload Open(string bundle, BundleBinding binding) =>
+        Open<BundlePayload>(bundle, binding, Prefix);
+
+    private T Open<T>(string bundle, BundleBinding binding, string prefix)
+        where T : ISealedPayload
     {
         if (string.IsNullOrWhiteSpace(bundle)) throw ConnectorException.SessionExpired("empty bundle");
 
         var parts = bundle.Split('.');
-        if (parts.Length != 5 || parts[0] != Prefix) throw ConnectorException.SessionExpired("malformed bundle");
+        if (parts.Length != 5 || parts[0] != prefix) throw ConnectorException.SessionExpired("malformed bundle");
 
         if (!_keys.TryGet(parts[1], out var key)) throw ConnectorException.SessionExpired("unknown key id");
 
@@ -94,8 +131,20 @@ public sealed class SealedBundleCodec
             throw ConnectorException.SessionExpired("bundle failed authentication");
         }
 
-        var payload = JsonSerializer.Deserialize<BundlePayload>(plaintext, BundleJson.Options)
+        T payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<T>(plaintext, BundleJson.Options)
                       ?? throw ConnectorException.SessionExpired("empty bundle payload");
+        }
+        catch (JsonException)
+        {
+            // Authenticated but not the shape this route wanted. The prefix
+            // check above already refuses the other kind, so reaching here
+            // means a payload minted by something that is not this codec.
+            throw ConnectorException.SessionExpired("bundle payload is not readable");
+        }
+
         CryptographicOperations.ZeroMemory(plaintext);
 
         if (payload.ExpiresAt <= _time.GetUtcNow()) throw ConnectorException.SessionExpired("bundle expired");
@@ -119,11 +168,56 @@ public sealed class SealedBundleCodec
 public readonly record struct BundleBinding(string ProviderId, string Subject, int ManifestVersion);
 
 /// <summary>
+/// What every sealed payload must state: when it stops being usable. Checked
+/// after the AEAD, so an expired blob is refused rather than read.
+/// </summary>
+public interface ISealedPayload
+{
+    DateTimeOffset ExpiresAt { get; }
+}
+
+/// <summary>
+/// What the human typed, sealed for their own device to hold.
+///
+/// It exists for one shape of provider: one whose session cannot be refreshed,
+/// so a fresh username and password is needed again in a day - and where asking
+/// the human daily is the alternative. The connector keeps no copy; this is the
+/// same custody argument as a session bundle, applied to the thing that
+/// produces sessions.
+///
+/// Shorter-lived than a session bundle on purpose. A password is the credential
+/// that does not rotate, cannot be revoked from here, and opens everything -
+/// so the window in which a stolen blob is useful has to be the smaller one.
+/// </summary>
+public sealed record CredentialPayload : ISealedPayload
+{
+    public int V { get; init; } = 1;
+
+    [JsonPropertyName("session_id")]
+    public required string SessionId { get; init; }
+
+    public required string Provider { get; init; }
+
+    [JsonPropertyName("issued_at")]
+    public required DateTimeOffset IssuedAt { get; init; }
+
+    [JsonPropertyName("expires_at")]
+    public required DateTimeOffset ExpiresAt { get; init; }
+
+    /// <summary>
+    /// Exactly what was posted to the login, and nothing added. It is fed back
+    /// through the manifest's own input validator on redemption, so a blob
+    /// cannot smuggle a key the provider never declared.
+    /// </summary>
+    public required IReadOnlyDictionary<string, string> Inputs { get; init; }
+}
+
+/// <summary>
 /// The plaintext inside a bundle. For an <c>agent</c>-custody provider this
 /// carries no secret at all - only a pointer to the agent and profile that
 /// hold the real session.
 /// </summary>
-public sealed record BundlePayload
+public sealed record BundlePayload : ISealedPayload
 {
     public int V { get; init; } = 1;
 

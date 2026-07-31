@@ -80,6 +80,73 @@ public sealed class ManifestValidatorTests
         Assert.Equal(LogoutSupport.None, Make.Manifest().Logout);
     }
 
+    // ── the credential store ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Jumbo's shape, and the only one it is for: client custody, a password
+    /// form to store, and a session that cannot be refreshed - so without it
+    /// the same human types the same password every morning.
+    /// </summary>
+    [Fact]
+    public void Accepts_a_credential_store_on_a_password_login_whose_session_cannot_be_refreshed()
+    {
+        ManifestValidator.Validate(Make.Manifest() with { OffersCredentialStore = true });
+    }
+
+    [Fact]
+    public void A_manifest_offers_no_credential_store_unless_it_says_so()
+    {
+        // A stored password is the heaviest thing this platform holds on
+        // somebody's behalf. Opting in has to be written down.
+        Assert.False(Make.Manifest().OffersCredentialStore);
+    }
+
+    /// <summary>
+    /// The refresh is what already stops the human being asked again, so
+    /// storing a password on top buys nothing and adds the one credential that
+    /// does not rotate and cannot be revoked from here.
+    /// </summary>
+    [Fact]
+    public void Rejects_a_credential_store_where_the_session_refreshes_itself()
+    {
+        var ex = Rejects(
+            (Make.Manifest() with { OffersCredentialStore = true })
+            .WithSession(new SessionSpec { TtlSeconds = 86_400, Refreshable = true }));
+
+        Assert.Contains("offers_credential_store is refused on a refreshable session", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A streamed login collects nothing, so there is nothing to seal. A
+    /// manifest offering a store here advertises a bundle that always arrives
+    /// empty.
+    /// </summary>
+    [Fact]
+    public void Rejects_a_credential_store_on_a_login_that_collects_nothing()
+    {
+        var manifest = Make.Manifest() with
+        {
+            OffersCredentialStore = true,
+            Runtime = ProviderRuntime.BrowserOnce,
+            Agent = new AgentRequirement { Required = true, Class = AgentClass.Pooled },
+            Auth = Make.Auth() with { Flow = AuthFlow.RemoteBrowser, Steps = [] },
+        };
+
+        var ex = Rejects(manifest);
+
+        Assert.Contains("offers_credential_store needs an auth step with fields", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(SecretCustody.Server)]
+    [InlineData(SecretCustody.Agent)]
+    public void Rejects_a_credential_store_where_the_credential_is_not_the_users_to_hold(SecretCustody custody)
+    {
+        var ex = Rejects(Make.Manifest() with { OffersCredentialStore = true, SecretCustody = custody });
+
+        Assert.Contains("offers_credential_store needs secret_custody 'client'", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Accepts_server_custody_when_the_provider_really_is_unattended()
     {

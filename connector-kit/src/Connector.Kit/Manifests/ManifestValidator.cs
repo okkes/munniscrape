@@ -61,6 +61,40 @@ public static partial class ManifestValidator
         {
             errors.Add("secret_custody 'agent' requires agent.class 'byo'");
         }
+
+        ValidateCredentialStore(m, errors);
+    }
+
+    /// <summary>
+    /// A stored password is the heaviest thing this platform will hold on a
+    /// user's behalf, so the three cases where it buys nothing are refused
+    /// outright rather than left to a reviewer to notice.
+    /// </summary>
+    private static void ValidateCredentialStore(ProviderManifest m, List<string> errors)
+    {
+        if (!m.OffersCredentialStore) return;
+
+        if (m.SecretCustody != SecretCustody.Client)
+        {
+            errors.Add("offers_credential_store needs secret_custody 'client'; " +
+                       $"'{m.SecretCustody}' means the credential does not live on the user's device");
+        }
+
+        // Nothing is typed, so there is nothing to seal. A manifest offering a
+        // store here would advertise a bundle that always arrives empty.
+        if (!m.Auth.AllFields().Any())
+        {
+            errors.Add("offers_credential_store needs an auth step with fields; " +
+                       $"flow '{m.Auth.Flow}' collects nothing to store");
+        }
+
+        // The refresh already removes the reason to keep a password. Storing
+        // one anyway is pure risk for a re-ask that was not going to happen.
+        if (m.Auth.Session.Refreshable)
+        {
+            errors.Add("offers_credential_store is refused on a refreshable session - " +
+                       "the refresh is what stops the human being asked again");
+        }
     }
 
     private static void ValidateAgent(ProviderManifest m, List<string> errors)

@@ -48,10 +48,18 @@ public sealed class ViewBuilder(
         var pending = job is null ? null : await challenges.PendingAsync(job.Id, ct);
 
         string? bundle = null;
-        if (deliverBundle && session.PendingBundle is { } issued)
+        string? credentials = null;
+
+        if (deliverBundle && (session.PendingBundle ?? session.PendingCredentialBundle) is not null)
         {
-            bundle = issued;
+            // Both, in one breath, and both cleared. The credential bundle is
+            // delivered under exactly the rule the session bundle already has:
+            // handed over once, then forgotten here.
+            bundle = session.PendingBundle;
+            credentials = session.PendingCredentialBundle;
+
             session.PendingBundle = null;
+            session.PendingCredentialBundle = null;
             session.UpdatedAt = time.GetUtcNow();
             await db.SaveChangesAsync(ct);
         }
@@ -61,6 +69,7 @@ public sealed class ViewBuilder(
             SessionId = session.Id,
             State = session.State,
             Bundle = bundle,
+            CredentialBundle = credentials,
             ExpiresAt = session.ExpiresAt,
             ProviderAccount = ConnectorJson.DeserializeOr<ProviderAccount?>(session.ProviderAccountJson, null),
             Challenge = pending is null ? null : ChallengeView.From(pending, session.ProviderId, session.Id),

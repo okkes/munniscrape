@@ -60,6 +60,11 @@ public sealed class ShopApiFactory : WebApplicationFactory<Program>
             // the bundle and the caller must persist the newest - has nothing in the
             // shipped fleet to exercise it. This provider exists only for that.
             services.AddSingleton<IProviderAdapter>(new RotatingStoreAdapter());
+
+            // Jumbo's shape - a password login whose session cannot be
+            // refreshed - which is the only shape a credential store is
+            // offerable on, and which no offline provider otherwise has.
+            services.AddSingleton<IProviderAdapter>(new DailyLoginAdapter());
         });
     }
 

@@ -51,6 +51,8 @@ offer, and knows before asking whether a provider can run unattended.
                                        // at the agent's own browser can pass?
   "logout": "none",                    // none | session | account - what DELETE
                                        // /sessions/{id} does upstream, if anything
+  "offers_credential_store": false,    // does a login hand back a sealed copy
+                                       // of what was typed? see §2.2
 
   // ── custody: the user's explicit per-service requirement ─────────
   "secret_custody": "client",          // client | server | agent
@@ -261,6 +263,7 @@ Two possible outcomes:
   "session_id": "ses_…",
   "state": "active",
   "bundle": "sb_v1.k3.9f…",            // persist this on the device
+  "credential_bundle": "cb_v1.k3.2a…",  // only where offers_credential_store
   "expires_at": "2026-08-26T10:00:12Z",
   "provider_account": { "display_name": "Jumbo — o.doker@…", "external_id": "…" }
 }
@@ -334,6 +337,41 @@ Legal `step` values are a closed enum in the kit: `queued`,
 `agent_assigned`, `opening_provider`, `authenticating`, `awaiting_human`,
 `selecting_accounts`, `downloading`, `parsing`, `normalizing`,
 `finalizing`, `logging_out`.
+
+#### The credential bundle
+
+Some providers cannot refresh a session at all. Jumbo's Auth0 cookie is one, so
+a real sign-in is wanted again within a day — and the alternative is asking the
+same person for the same password every morning.
+
+Where the manifest says `offers_credential_store`, a successful login also
+returns `credential_bundle`: what the human typed, sealed by the same codec, the
+same key and the same associated data as the session bundle. Offer it back on
+the next login and nobody is asked again:
+
+```http
+POST /v1/jumbo/login
+{ "subject": "u_7Kf3…", "credential_bundle": "cb_v1.k3.2a…" }
+```
+
+The connector keeps no copy — it is handed over exactly once, like the session
+bundle. It is read only when `inputs` is empty, so a caller that sends both is
+taken at the word of what the human just typed rather than what the device
+remembered, and what comes out is fed through the manifest's own validator, so a
+bundle cannot carry a field the provider never declared.
+
+**The consumer's obligation.** Where you keep it is the consumer's decision and
+the connector cannot enforce it. On web, `sessionStorage` and nothing longer:
+a sealed password surviving a browser restart is what this custody model exists
+to avoid. On native, the platform's encrypted store — Keychain, Keystore,
+SQLCipher. The demo client does not implement this flow.
+
+**What it costs, said plainly.** A password re-submitted by machine on a
+schedule is one that can be wrong with nobody watching, and this platform never
+retries a submitted credential precisely because that is how accounts get
+locked. It is refused at boot on a refreshable session (the refresh already
+removed the reason), on a login that collects no fields, and on anything but
+client custody.
 
 ### 2.3 Resuming a stored session
 

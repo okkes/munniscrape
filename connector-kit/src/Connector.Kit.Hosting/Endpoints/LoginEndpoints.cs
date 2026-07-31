@@ -56,8 +56,17 @@ internal static class LoginEndpoints
             var deviceClass = RequestContext.DeviceClassOf(http);
             RequireConsent(platform, request.Consent);
 
+            // What the human typed, or what their device kept from the last
+            // time they typed it. Redeemed before validation, never after: the
+            // manifest's own rules then apply to a stored bundle exactly as
+            // they apply to a posted form, so one cannot smuggle a field the
+            // provider never declared.
+            var inputs = request.Inputs.Count == 0 && request.CredentialBundle is { Length: > 0 } stored
+                ? sessions.OpenCredentials(manifest.Id, request.Subject, stored)
+                : request.Inputs;
+
             AuthInputValidator.ValidateConfig(manifest, request.Config);
-            AuthInputValidator.ValidateInputs(manifest, request.Inputs);
+            AuthInputValidator.ValidateInputs(manifest, inputs);
 
             // A caller that timed out and retried gets the run it already
             // started, not a second one. Starting a second login would submit
@@ -97,7 +106,7 @@ internal static class LoginEndpoints
                 SessionId = session.Id,
                 ProviderId = manifest.Id,
                 Kind = JobKind.Login,
-                Inputs = request.Inputs,
+                Inputs = inputs,
                 Config = request.Config,
                 ProfileId = profileId,
             }, ct);

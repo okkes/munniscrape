@@ -61,6 +61,11 @@ internal static class JumboManifest
         },
         UnattendedFetch = false,              // a human signs in roughly daily
         LoginNeedsHeadedAgent = true,         // and at the browser, when Auth0 walls it
+        // The only provider here shaped for it: the Auth0 cookie cannot be
+        // refreshed, so "roughly daily" means asking the same person for the
+        // same password every morning. The connector keeps no copy - the sealed
+        // bundle goes to their device and comes back on the next login.
+        OffersCredentialStore = true,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "jumbo",

@@ -82,6 +82,32 @@ public sealed record ProviderManifest
     /// </summary>
     public LogoutSupport Logout { get; init; } = LogoutSupport.None;
 
+    /// <summary>
+    /// Whether a successful login hands back a sealed copy of what the human
+    /// typed, for their own device to keep.
+    /// </summary>
+    /// <remarks>
+    /// For one shape of provider only: a session that cannot be refreshed, so a
+    /// fresh username and password is wanted again within a day. Jumbo is the
+    /// case - its Auth0 cookie is not refreshable and it wants a real sign-in
+    /// roughly daily, so the alternative is asking the same human for the same
+    /// password every morning.
+    /// <para>
+    /// The connector keeps no copy: the bundle is sealed to the user's subject
+    /// and handed over once, exactly as a session bundle is. What it costs is
+    /// real and belongs written down - a password re-submitted by machine on a
+    /// schedule is one that can be wrong without anybody watching, and this
+    /// platform never retries a submitted credential precisely because that is
+    /// how accounts get locked.
+    /// </para>
+    /// <para>
+    /// Refused at boot for a provider that declares no fields (there is nothing
+    /// to store), for one whose session IS refreshable (the refresh already
+    /// removes the reason), and for anything but client custody.
+    /// </para>
+    /// </remarks>
+    public bool OffersCredentialStore { get; init; }
+
     /// <summary>Where the long-lived secret lives at rest.</summary>
     public required SecretCustody SecretCustody { get; init; }
 

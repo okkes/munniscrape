@@ -180,6 +180,19 @@ public sealed class ConnectorTimeouts
     /// </summary>
     public int AbandonedJobSeconds { get; set; } = 1800;
 
+    /// <summary>
+    /// How long a sealed credential bundle stays redeemable.
+    ///
+    /// Shorter than a session bundle's TTL on purpose, and it is a choice
+    /// rather than an observation: a session bundle expires when the provider's
+    /// session does, and a password has no such natural end. It is the
+    /// credential that does not rotate and cannot be revoked from here, so the
+    /// window in which a stolen blob is worth anything is the one thing we can
+    /// actually make small. Thirty days covers "connect in January, still
+    /// syncing in February" without letting a blob from last spring work.
+    /// </summary>
+    public int CredentialBundleDays { get; set; } = 30;
+
     public int PolitenessMs { get; set; } = 800;
 
     /// <summary>Grace after a challenge expires before its image bytes are purged.</summary>

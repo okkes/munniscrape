@@ -42,6 +42,18 @@ public sealed record LoginRequest
     public IReadOnlyDictionary<string, string> Inputs { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// A credential bundle this connector sealed earlier, offered instead of
+    /// asking the human again.
+    ///
+    /// Read only when <see cref="Inputs"/> is empty, so a caller that sends
+    /// both is taken at the word of what it typed rather than what it
+    /// remembered. What comes out is fed through the manifest's own validator
+    /// exactly as posted inputs are, so a bundle cannot carry a field the
+    /// provider never declared.
+    /// </summary>
+    public string? CredentialBundle { get; init; }
+
     /// <summary>Non-secret settings the provider needs on every call.</summary>
     public IReadOnlyDictionary<string, string> Config { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
@@ -67,6 +79,19 @@ public sealed record SessionResponse
 
     /// <summary>Present exactly once, when the session first becomes usable or rotates.</summary>
     public string? Bundle { get; init; }
+
+    /// <summary>
+    /// What the human typed, sealed for this device to keep - present exactly
+    /// once, and only where the provider declares
+    /// <c>offers_credential_store</c>.
+    ///
+    /// Offer it back as <c>credential_bundle</c> on the next login and the same
+    /// human is not asked again. Store it the way the device class allows: on
+    /// web that is the tab and nothing longer, because a sealed password
+    /// surviving a browser restart is the thing the whole custody model exists
+    /// to avoid.
+    /// </summary>
+    public string? CredentialBundle { get; init; }
 
     public DateTimeOffset? ExpiresAt { get; init; }
 

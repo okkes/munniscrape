@@ -31,6 +31,9 @@ public sealed class JobOutcomeService(
     LiveChannel live,
     ILogger<JobOutcomeService> logger)
 {
+    private static readonly IReadOnlyDictionary<string, string> EmptyInputs =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
     /// <summary>
     /// Records success: stage the records, seal a new bundle where the
     /// adapter produced material, and move the session to active.
@@ -72,6 +75,21 @@ public sealed class JobOutcomeService(
             // session row has to agree, or the next job routes nowhere.
             if (material.AgentId is { } agentId) session.AgentId = agentId;
             if (material.ProfileId is { } profileId) session.ProfileId = profileId;
+
+            // Sealed from the inputs this very job used, and only where the
+            // manifest offers a credential store. It has to happen before
+            // CompleteAsync below, which clears the job's inputs the moment the
+            // job goes terminal - that ordering is the whole reason this sits
+            // in the success path rather than somewhere tidier.
+            //
+            // A job that carried no inputs - a fetch, or a login that redeemed
+            // a stored bundle - seals nothing and leaves alone whatever is
+            // waiting to be collected.
+            var inputs = Infrastructure.ConnectorJson.DeserializeOr<IReadOnlyDictionary<string, string>>(
+                job.InputsJson, EmptyInputs);
+
+            session.PendingCredentialBundle =
+                sessions.SealCredentials(session, inputs) ?? session.PendingCredentialBundle;
         }
 
         // A session that was still parked on a question is running again by
