@@ -1,4 +1,5 @@
 using Connector.Kit.AgentProtocol;
+using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Auth;
 using Connector.Kit.Hosting.Challenges;
@@ -137,7 +138,10 @@ internal static class AgentApiEndpoints
             }
 
             return Results.NoContent();
-        });
+        })
+        // 204 is the long poll expiring with no work, which is most of them.
+        .Produces<LeasedJob>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status204NoContent);
 
         agents.MapPost("/jobs/{jobId}/renew", async (
             HttpContext http,
@@ -165,7 +169,8 @@ internal static class AgentApiEndpoints
             var agent = http.RequireAgent();
             await queue.ProgressAsync(jobId, agent.Id, report, ct);
             return Results.NoContent();
-        });
+        })
+        .Produces(StatusCodes.Status204NoContent);
 
         agents.MapPost("/jobs/{jobId}/challenge", async (
             HttpContext http,
@@ -229,7 +234,11 @@ internal static class AgentApiEndpoints
             return pending is null
                 ? ConnectorResults.Error(new ConnectorException(ErrorCode.MfaTimeout, "challenge expired unanswered"))
                 : Results.NoContent();
-        });
+        })
+        // 204 means "still open, poll again" and is the difference between a
+        // human who is mid-login and one who never came back.
+        .Produces<ChallengeAnswer>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status204NoContent);
 
         // The live view's agent leg, in this group and behind this group's
         // auth: a streamed login is a job like any other, and its frames must

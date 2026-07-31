@@ -103,7 +103,11 @@ internal static class LiveEndpoints
             // the current frame again: re-sending a picture the consumer is
             // already showing costs its bandwidth to change nothing.
             return Results.NoContent();
-        });
+        })
+        // Both outcomes, because 204 is the normal one: a long poll that timed
+        // out with no newer frame is this route working, not failing.
+        .Produces<byte[]>(StatusCodes.Status200OK, "image/jpeg")
+        .Produces(StatusCodes.Status204NoContent);
 
         live.MapPost("/input", async (
             string provider,
@@ -138,7 +142,9 @@ internal static class LiveEndpoints
             // the next frame's business, and claiming otherwise would be a
             // promise this side of the wire cannot keep.
             return Results.Accepted();
-        });
+        })
+        // 202 and nothing else, which is the promise: accepted, not applied.
+        .Produces(StatusCodes.Status202Accepted);
     }
 
     /// <summary>
@@ -187,7 +193,8 @@ internal static class LiveEndpoints
             // agent's, and an error here would make an agent retry a
             // photograph that is already out of date.
             return Results.Ok();
-        });
+        })
+        .Produces(StatusCodes.Status200OK);
 
         live.MapGet("/input", async (
             HttpContext http,
@@ -217,7 +224,11 @@ internal static class LiveEndpoints
             }
 
             return Results.NoContent();
-        });
+        })
+        // As with the consumer's frame poll, 204 is the quiet case rather than
+        // the broken one: nobody touched the page during the window.
+        .Produces<LiveInputBatch>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status204NoContent);
     }
 
     /// <summary>

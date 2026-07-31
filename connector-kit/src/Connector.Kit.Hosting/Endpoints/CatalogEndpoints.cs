@@ -47,7 +47,12 @@ internal static class CatalogEndpoints
                 Providers = providers,
                 Service = Descriptor(platform, registry),
             });
-        });
+        })
+        // Named here rather than inferred: this handler also answers 304, so
+        // its declared type is the bare IResult the two branches share and the
+        // funnel's own claim never reaches the document.
+        .Produces<CatalogResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status304NotModified);
 
         api.MapGet("/providers/{id}", async (
             HttpContext http,
@@ -64,7 +69,13 @@ internal static class CatalogEndpoints
 
             http.Response.Headers.ETag = etag;
             return ConnectorResults.Json(Describe(manifest, await statuses.GetAsync(manifest.Id, ct)));
-        });
+        })
+        // A free-form object, exactly as CatalogResponse.Providers already
+        // declares one: the manifest is serialised through a node so the
+        // document's shape stays the spec's, and a wrapper type here would
+        // describe our storage rather than the contract.
+        .Produces<JsonObject>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status304NotModified);
 
         // Liveness carries no auth and no data: a probe that needs a
         // credential is a probe that fails for the wrong reason.

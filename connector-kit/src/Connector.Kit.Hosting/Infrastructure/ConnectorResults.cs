@@ -1,5 +1,8 @@
+using System.Reflection;
 using Connector.Kit.Errors;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Hosting.Infrastructure;
@@ -37,8 +40,30 @@ public sealed class ConnectorHttpException : Exception
 /// </summary>
 public static class ConnectorResults
 {
-    public static IResult Json<T>(T value, int status = StatusCodes.Status200OK) =>
-        Results.Json(value, ConnectorJson.Options, contentType: null, statusCode: status);
+    /// <summary>
+    /// A 200 carrying <typeparamref name="T"/>, and saying so in the reference.
+    ///
+    /// The return type is the whole point. <c>Results.Json</c> hands back a
+    /// bare <see cref="IResult"/>, and ASP.NET only asks a handler's DECLARED
+    /// return type what it produces - so every route in this service documented
+    /// a 200 with no body at all, while its request schema was inferred
+    /// perfectly. A reference that names what to send and stays silent about
+    /// what comes back is the half that cannot be guessed from a curl.
+    /// </summary>
+    public static ConnectorJsonResult<T> Json<T>(T value) => new(value, StatusCodes.Status200OK);
+
+    /// <summary>
+    /// The same body under a status the handler picks at run time.
+    ///
+    /// Deliberately <see cref="IResult"/> and therefore deliberately
+    /// undocumented: <see cref="IEndpointMetadataProvider.PopulateMetadata"/>
+    /// is static, so a type cannot describe a status chosen per call - it could
+    /// only ever claim 200, which for the 202 callers here would be a document
+    /// that is confidently wrong. Every caller of this overload has more than
+    /// one outcome, and those name their responses at the <c>MapX</c> call
+    /// where all of them are visible at once.
+    /// </summary>
+    public static IResult Json<T>(T value, int status) => new ConnectorJsonResult<T>(value, status);
 
     public static IResult Error(ConnectorException exception, string? detailId = null, int? retryAfterSeconds = null)
     {
@@ -96,4 +121,52 @@ public static class ConnectorResults
             ConnectorJson.Options,
             contentType: null,
             statusCode: status);
+}
+
+/// <summary>
+/// The funnel's own result: the same bytes <c>Results.Json</c> would have
+/// written, and a type the reference can read.
+///
+/// It exists because response documentation in minimal APIs is inferred from
+/// the handler's declared return type, and every helper that returns
+/// <see cref="IResult"/> erases it. <c>TypedResults.Json</c> is not the way
+/// out - its <c>JsonHttpResult&lt;T&gt;</c> contributes no response-type
+/// metadata at all - so the funnel that already owns "how a body is written"
+/// takes on "what the body is" as well.
+///
+/// Declaring it once here rather than as <c>.Produces&lt;T&gt;()</c> on every
+/// route is the same call the rest of this file makes: a wire property should
+/// be a consequence of the code path, not a line somebody has to remember on
+/// route thirty-seven.
+/// </summary>
+public sealed class ConnectorJsonResult<T> : IResult, IEndpointMetadataProvider, IStatusCodeHttpResult, IValueHttpResult<T>
+{
+    private readonly T _value;
+
+    internal ConnectorJsonResult(T value, int statusCode)
+    {
+        _value = value;
+        StatusCode = statusCode;
+    }
+
+    public T? Value => _value;
+
+    public int? StatusCode { get; }
+
+    public Task ExecuteAsync(HttpContext httpContext) =>
+        Results.Json(_value, ConnectorJson.Options, contentType: null, statusCode: StatusCode)
+            .ExecuteAsync(httpContext);
+
+    /// <summary>
+    /// Static, so it can only ever claim the default status - which is exactly
+    /// why <see cref="ConnectorResults.Json{T}(T, int)"/> returns a bare
+    /// <see cref="IResult"/> instead of coming through here.
+    /// </summary>
+    static void IEndpointMetadataProvider.PopulateMetadata(MethodInfo method, EndpointBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Metadata.Add(new ProducesResponseTypeMetadata(
+            StatusCodes.Status200OK, typeof(T), ["application/json"]));
+    }
 }

@@ -48,7 +48,9 @@ internal static class ResourceEndpoints
             }
 
             return await runner.RunAsync(http, provider, resource, RequestContext.Query(http), grant, ct);
-        });
+        })
+        .Produces<DataResponse>(StatusCodes.Status200OK)
+        .Produces<JobAcceptedResponse>(StatusCodes.Status202Accepted);
 
         // The one-shot form, for a caller that wants a single round trip and
         // does not need a ticket. Everything after the bundle is opened is the
@@ -79,7 +81,12 @@ internal static class ResourceEndpoints
             };
 
             return await runner.RunAsync(http, provider, resource, Flatten(request.Params), grant, ct);
-        });
+        })
+        // The two outcomes a fetch has, and the reason FetchRunner.RunAsync
+        // stays Task<IResult>: which one you get depends on how far the job got
+        // before the window closed, so no single static claim can be true.
+        .Produces<DataResponse>(StatusCodes.Status200OK)
+        .Produces<JobAcceptedResponse>(StatusCodes.Status202Accepted);
 
         api.MapPost("/{provider}/{resource}/ack", async (
             HttpContext http,

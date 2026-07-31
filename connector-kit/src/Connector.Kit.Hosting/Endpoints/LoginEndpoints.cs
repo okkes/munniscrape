@@ -124,7 +124,12 @@ internal static class LoginEndpoints
             }
 
             return ConnectorResults.Json(view, StatusCodes.Status202Accepted);
-        });
+        })
+        // The same body under two statuses, which is the contract: 200 means
+        // the bundle is in your hands, 202 means poll or subscribe. A consumer
+        // that only reads the 200 shape never learns the second exists.
+        .Produces<SessionResponse>(StatusCodes.Status200OK)
+        .Produces<SessionResponse>(StatusCodes.Status202Accepted);
 
         api.MapGet("/{provider}/login/{sessionId}", async (
             HttpContext http,
@@ -175,7 +180,11 @@ internal static class LoginEndpoints
                 ct);
 
             return Results.Empty;
-        });
+        })
+        // A stream of the same view the poll returns, one per event. Naming the
+        // frame type is the only thing that makes the stream readable: the
+        // status alone would say a session subscription returns nothing.
+        .Produces<SessionResponse>(StatusCodes.Status200OK, "text/event-stream");
 
         api.MapGet("/{provider}/login/{sessionId}/challenges/{challengeId}/image", async (
             string provider,
@@ -197,7 +206,8 @@ internal static class LoginEndpoints
             return bytes is null
                 ? ConnectorResults.Error(new ConnectorException(ErrorCode.ChallengeExpired, "no image for this challenge"))
                 : Results.File(bytes, "image/png");
-        });
+        })
+        .Produces<byte[]>(StatusCodes.Status200OK, "image/png");
 
         api.MapPost("/{provider}/login/{sessionId}/answer", async (
             string provider,
@@ -322,7 +332,11 @@ internal static class LoginEndpoints
             db.ChangeTracker.Clear();
 
             return Results.NoContent();
-        });
+        })
+        // 204, and the document said 200 until this line existed - the default
+        // inference claims a 200 for any handler it cannot read, so a route
+        // that never returns one was documented as if it did.
+        .Produces(StatusCodes.Status204NoContent);
     }
 
     private static async Task RequireWorkAcceptedAsync(ProviderStatusService statuses, ProviderManifest manifest, CancellationToken ct)

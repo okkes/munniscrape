@@ -1,4 +1,5 @@
 using Connector.Kit.Adapters;
+using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Auth;
 using Connector.Kit.Hosting.Challenges;
 using Connector.Kit.Hosting.Data;
@@ -145,6 +146,22 @@ public static class ConnectorPlatform
             .AddEndpointFilter<ConnectorExceptionFilter>()
             .AddEndpointFilter<ConnectorAuthFilter>();
 
+        // Declared on the group because the filter above is on the group: every
+        // route under it fails into the same envelope, so documenting it here
+        // says once what would otherwise be twenty-four identical lines nobody
+        // keeps in step. The statuses are the ones a caller must actually
+        // branch on - the full code-to-status map is the error catalogue's,
+        // and reproducing it per route would describe the taxonomy rather
+        // than the route.
+        //
+        // WithMetadata rather than Produces because Produces is a
+        // RouteHandlerBuilder extension and this is the group; the metadata it
+        // adds is this same type either way.
+        api.WithMetadata(
+            Envelope(StatusCodes.Status400BadRequest),
+            Envelope(StatusCodes.Status401Unauthorized),
+            Envelope(StatusCodes.Status500InternalServerError));
+
         CatalogEndpoints.Map(api, app, platform);
         LoginEndpoints.Map(api, platform);
         LiveEndpoints.MapConsumer(api);
@@ -154,6 +171,10 @@ public static class ConnectorPlatform
 
         return app;
     }
+
+    /// <summary>The failure shape <see cref="ConnectorExceptionFilter"/> guarantees, at one status.</summary>
+    private static ProducesResponseTypeMetadata Envelope(int status) =>
+        new(status, typeof(ConnectorErrorEnvelope), ["application/json"]);
 
     /// <summary>
     /// The API reference: the OpenAPI document at <c>/openapi/v1.json</c> and

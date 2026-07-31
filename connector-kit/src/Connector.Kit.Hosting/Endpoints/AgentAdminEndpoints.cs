@@ -86,7 +86,8 @@ internal static class AgentAdminEndpoints
 
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        });
+        })
+        .Produces(StatusCodes.Status204NoContent);
 
         api.MapGet("/agents/{agentId}/profiles", async (
             string agentId,

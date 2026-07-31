@@ -66,7 +66,10 @@ internal static class JobEndpoints
                 ct);
 
             return Results.Empty;
-        });
+        })
+        // The same view the poll returns, one per event - identical contract to
+        // a login's stream, and named the same way.
+        .Produces<JobResponse>(StatusCodes.Status200OK, "text/event-stream");
 
         api.MapPost("/{provider}/jobs/{jobId}/answer", async (
             string provider,
