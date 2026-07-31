@@ -30,6 +30,27 @@ public sealed record AgentCapabilities
     [JsonPropertyName("class")]
     public AgentClass Class { get; init; } = AgentClass.Pooled;
 
+    /// <summary>
+    /// Whether this agent's browser is one a human could actually reach.
+    ///
+    /// False by default, exactly as headless is the default everywhere: an
+    /// agent in a rack has nobody in front of it, and one that has a person
+    /// there has to say so. What it buys is that a login declaring
+    /// <see cref="ProviderManifest.LoginNeedsHeadedAgent"/> is never offered
+    /// to a machine that cannot finish it - previously such an agent leased it,
+    /// drove the sign-in for two minutes, met the widget and failed
+    /// <c>blocked_by_provider</c>, having learnt nothing the catalogue could
+    /// not have said before it started.
+    /// </summary>
+    public bool Headed { get; init; }
+
+    /// <summary>
+    /// Deliberately NOT a function of <see cref="Headed"/>. This answers "can
+    /// this agent serve this provider at all", and the headed requirement is
+    /// about one job kind: a headless agent is perfectly able to run Amazon's
+    /// FETCHES, and excluding it here would idle it for a constraint that
+    /// applies only to the login.
+    /// </summary>
     public bool CanServe(ProviderManifest manifest) =>
         (Providers.Count == 0 || Providers.Contains(manifest.Id, StringComparer.Ordinal))
         && (Runtimes.Count == 0 || Runtimes.Contains(manifest.Runtime));

@@ -166,6 +166,10 @@ public sealed class ConnectorAgentOptions
             Egress = Egress,
             MaxConcurrency = MaxConcurrency,
             Class = Class,
+            // The same setting AgentJobContext.Attended is built from, read
+            // once here so the claim this agent makes to the queue and the
+            // condition its adapters meet at run time cannot drift apart.
+            Headed = !Headless,
         };
     }
 

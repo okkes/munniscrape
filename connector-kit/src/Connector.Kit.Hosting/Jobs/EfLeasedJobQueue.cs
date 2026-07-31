@@ -106,6 +106,20 @@ public sealed class EfLeasedJobQueue(
         var wantsRefresh = accept.Contains(JobKind.Refresh);
         var wantsLogout = accept.Contains(JobKind.Logout);
 
+        // Logins this agent could lease and could not finish. A provider whose
+        // sign-in can meet an interactive wall needs somebody at the browser,
+        // and a headless agent taking one drives it for two minutes before
+        // failing blocked_by_provider - a wasted lease for the user, a wasted
+        // run against the provider, and an error that reads like the account is
+        // broken. Only the LOGIN is withheld: the same agent still serves every
+        // fetch for the same provider, which is most of the work.
+        var headedOnlyLogins = capabilities.Headed
+            ? []
+            : registry.Manifests
+                .Where(m => m.LoginNeedsHeadedAgent)
+                .Select(m => m.Id)
+                .ToHashSet(StringComparer.Ordinal);
+
         for (var round = 0; round < RaceRetries; round++)
         {
             var queued = db.Jobs
@@ -116,7 +130,8 @@ public sealed class EfLeasedJobQueue(
                             // enums: that one shape is not reliably
                             // translatable on every provider, and this queue
                             // must behave identically on both.
-                            && ((wantsLogin && j.Kind == JobKind.Login)
+                            && ((wantsLogin && j.Kind == JobKind.Login
+                                 && !headedOnlyLogins.Contains(j.ProviderId))
                                 || (wantsFetch && j.Kind == JobKind.Fetch)
                                 || (wantsRefresh && j.Kind == JobKind.Refresh)
                                 || (wantsLogout && j.Kind == JobKind.Logout))
