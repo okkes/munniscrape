@@ -25,6 +25,14 @@
       handler. Development mode never touches this assembly.
     -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!--
+      The API reference. Here rather than in each product's Api project for
+      the same reason everything else is: a behaviour that lived in one
+      product's Program.cs would be a behaviour the other silently lacks.
+      Both are mapped only outside production - see MapConnectorReference.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

@@ -19,6 +19,20 @@
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.10" />
   </ItemGroup>
 
+  <ItemGroup Label="Api documentation">
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.16.16" />
+    <!--
+      Microsoft.AspNetCore.OpenApi 10.0.10 resolves Microsoft.OpenApi 2.0.0,
+      which carries a known high-severity advisory (GHSA-v5pm-xwqc-g5wc).
+      Pinned forward rather than suppressed with NoWarn - the same call as
+      SQLitePCLRaw in Connector.Kit.Hosting.csproj, and for the same reason:
+      the advisory does not stop being real because it arrived transitively.
+      CentralPackageTransitivePinningEnabled above is what makes this reach it.
+    -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.11.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Automation">
     <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
   </ItemGroup>

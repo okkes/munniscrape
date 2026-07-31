@@ -19,6 +19,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Scalar.AspNetCore;
 
 namespace Connector.Kit.Hosting;
 
@@ -50,6 +51,11 @@ public static class ConnectorPlatform
         services.AddSingleton(Options.Create(options));
 
         services.TryAddDefaults();
+
+        // The OpenAPI document, and only outside production. Registering the
+        // generator is harmless there too, but keeping the pair together means
+        // one rule to read rather than two halves to line up.
+        if (!options.IsProduction) services.AddOpenApi();
 
         services.AddDbContext<ConnectorDbContext>(builder => ConnectorDbContext.Configure(builder, options.Database));
 
@@ -145,6 +151,38 @@ public static class ConnectorPlatform
         ResourceEndpoints.Map(api);
         JobEndpoints.Map(api);
         AgentAdminEndpoints.Map(api);
+
+        return app;
+    }
+
+    /// <summary>
+    /// The API reference: the OpenAPI document at <c>/openapi/v1.json</c> and
+    /// Scalar over it at <c>/scalar</c>. Development only, and silently absent
+    /// in production.
+    ///
+    /// Absent rather than authenticated, because there is no credential a
+    /// browser could sensibly present. Production <c>/v1/*</c> demands an
+    /// allowlisted client certificate AND an audience-checked M2M token; a
+    /// reference page that could be fetched from a browser would be describing
+    /// an API that browser cannot call, and the login form it would need to
+    /// become useful is a second way in to a service whose whole design is that
+    /// there is one.
+    ///
+    /// In development the same routes need nothing: dev mode accepts a shared
+    /// secret, and with none configured - which is what the local compose file
+    /// does - it accepts every caller. So this opens no door that is not
+    /// already open, on a stack that publishes to localhost only.
+    /// </summary>
+    public static WebApplication MapConnectorReference(this WebApplication app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        if (app.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value.IsProduction) return app;
+
+        app.MapOpenApi();
+        app.MapScalarApiReference(options => options
+            .WithTitle("Connector API")
+            .WithTheme(ScalarTheme.BluePlanet));
 
         return app;
     }

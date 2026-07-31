@@ -24,6 +24,7 @@ builder.Services.AddConnectorPlatform(builder.Configuration, platform =>
 var app = builder.Build();
 
 app.UseConnectorPlatform();
+app.MapConnectorReference();
 app.MapConnectorApi();
 app.MapAgentApi();
 
