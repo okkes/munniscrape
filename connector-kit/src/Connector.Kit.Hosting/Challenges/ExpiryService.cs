@@ -76,6 +76,13 @@ public sealed class ExpiryService(
         await FailJobsOnExpiredChallengesAsync(db, outcomes, ct);
         await challenges.SweepAsync(ct);
         await queue.RequeueExpiredLeasesAsync(ct);
+
+        // Before the reconcile below, so a session whose only run was never
+        // taken is told the same way as one whose run died: this fails jobs,
+        // and that is what turns a failed job into a session saying something
+        // true instead of "running" until its TTL runs out.
+        await queue.ExpireAbandonedAsync(ct);
+
         await ReconcileStrandedSessionsAsync(db, provider.GetRequiredService<SessionService>(), ct);
         await ExpireSessionsAsync(db, ct);
         await results.SweepAsync(ct);

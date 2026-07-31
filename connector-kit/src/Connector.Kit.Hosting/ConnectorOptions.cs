@@ -168,6 +168,18 @@ public sealed class ConnectorTimeouts
 
     public int JobTimeoutSeconds { get; set; } = 300;
 
+    /// <summary>
+    /// How long a job nobody ever leased may keep the credentials it was
+    /// queued with.
+    ///
+    /// The gap this closes: every automatic cleanup path keys on an EXPIRED
+    /// LEASE, so a job that was never leased at all is reached by none of them.
+    /// A login for a browser-tier provider whose pooled agent happens to be
+    /// offline therefore sat in the queue holding a plaintext password
+    /// indefinitely - the one case with no upper bound anywhere.
+    /// </summary>
+    public int AbandonedJobSeconds { get; set; } = 1800;
+
     public int PolitenessMs { get; set; } = 800;
 
     /// <summary>Grace after a challenge expires before its image bytes are purged.</summary>

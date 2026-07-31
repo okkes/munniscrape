@@ -140,17 +140,29 @@ public sealed class JobRow
     public DateTimeOffset UpdatedAt { get; set; }
 
     /// <summary>
-    /// Login inputs, held only until the job reaches a terminal state.
+    /// Login inputs - a password, in plain text, by choice: no converter, no
+    /// encryption, no key.
+    ///
     /// Deliberately not cleared at lease time: a lease lost before the
-    /// credential went upstream requeues once, and the retry needs them.
+    /// credential went upstream requeues once, and the retry needs them. What
+    /// bounds it instead is four paths, and for a long time it was three - a
+    /// job reaching a terminal state, a lost lease being burnt, and a
+    /// disconnect purging the session. All three key on a job that got as far
+    /// as being LEASED, so a login nobody ever took was reached by none of
+    /// them and kept its password for as long as the row existed, which is
+    /// forever. <c>ExpireAbandonedAsync</c> is the fourth.
     /// </summary>
     public string? InputsJson { get; set; }
 
     /// <summary>
-    /// The unsealed session material, same lifetime rule as
-    /// <see cref="InputsJson"/>. Present between enqueue and the terminal
-    /// state and nowhere else - this row is the only place the control plane
-    /// ever holds credential material at rest.
+    /// The unsealed session material, under the same four rules as
+    /// <see cref="InputsJson"/>. For a cookie-jar provider this is the whole
+    /// jar.
+    ///
+    /// This row is the only place the control plane holds credential material
+    /// UNSEALED. The sealed kind rests elsewhere - a session's pending bundle
+    /// is one - but that is a blob bound to a subject and a manifest version,
+    /// which is a different thing from a password somebody could read.
     /// </summary>
     public string? MaterialJson { get; set; }
 

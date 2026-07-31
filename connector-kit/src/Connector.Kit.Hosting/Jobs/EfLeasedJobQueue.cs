@@ -386,6 +386,50 @@ public sealed class EfLeasedJobQueue(
     }
 
     /// <summary>
+    /// The job nobody came for.
+    ///
+    /// Every other cleanup here keys on <c>LeaseExpiresAt</c> - a lease that
+    /// ran out - and a job that was never leased has none, so it was reached by
+    /// nothing at all. A login for a browser-tier provider whose pooled agent
+    /// is offline sat Queued holding the password it was enqueued with, for as
+    /// long as the row existed, which was forever: the row is never deleted and
+    /// there is no retention pass over jobs.
+    ///
+    /// Failed rather than merely scrubbed. A queued login stripped of its
+    /// inputs would eventually be leased and fail somewhere further in for a
+    /// reason nobody could reconstruct; <c>agent_unavailable</c> is what
+    /// actually happened, and it is the same code a job that exhausted its
+    /// attempts reports.
+    /// </summary>
+    public async Task<int> ExpireAbandonedAsync(CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var cutoff = now.AddSeconds(-_options.Timeouts.AbandonedJobSeconds);
+
+        var expired = await db.Jobs
+            // Queued with no lease is precisely "never taken, or requeued and
+            // not taken again" - and a requeue stamps UpdatedAt, so the window
+            // starts again for a job that genuinely got a second chance.
+            .Where(j => j.State == JobState.Queued
+                        && j.LeaseExpiresAt == null
+                        && j.UpdatedAt < cutoff)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(j => j.State, JobState.Failed)
+                .SetProperty(j => j.ErrorCode, ErrorCode.AgentUnavailable)
+                .SetProperty(j => j.ErrorDetail, "no agent took this job before its credentials had to be discarded")
+                .SetProperty(j => j.InputsJson, (string?)null)
+                .SetProperty(j => j.MaterialJson, (string?)null)
+                .SetProperty(j => j.UpdatedAt, now), ct);
+
+        if (expired > 0)
+        {
+            logger.LogInformation("discarded credentials on {Expired} job(s) nobody leased", expired);
+        }
+
+        return expired;
+    }
+
+    /// <summary>
     /// One conditional update per reason. Splitting them keeps the SET list
     /// free of a CASE over a value-converted enum, which is the kind of thing
     /// that translates on one provider and not the other.

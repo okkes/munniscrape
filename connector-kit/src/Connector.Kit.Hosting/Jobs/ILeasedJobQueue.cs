@@ -68,6 +68,14 @@ public interface ILeasedJobQueue
     /// </summary>
     Task<int> RequeueExpiredLeasesAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Fails jobs nobody ever leased, and takes their credentials with them.
+    ///
+    /// The backstop for the one case every other cleanup path misses: they all
+    /// key on a lease that expired, and a job that was never leased has none.
+    /// </summary>
+    Task<int> ExpireAbandonedAsync(CancellationToken ct);
+
     /// <summary>Records typed progress and the credential latch. Never prose.</summary>
     Task ProgressAsync(string jobId, string? leaseOwner, ProgressReport report, CancellationToken ct);
 }
