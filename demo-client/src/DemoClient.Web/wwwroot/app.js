@@ -630,7 +630,7 @@ function updateLogin(streamNote) {
   const stateNode = el('login-state');
   if (stateNode) mount(stateNode, badge(copy.term('session_state', view.state).text, stateKind(view.state)));
 
-  mount(live.login.progress, progressTrail(view.progress));
+  mount(live.login.progress, progressTrail(view.progress, trailOutcome(view.state)));
 
   // The challenge element is rebuilt only when the challenge itself changes,
   // so a progress frame arriving mid-typing does not wipe what was typed.
@@ -715,7 +715,23 @@ function stateKind(runState) {
  * makes it a trail rather than a status line - and it is only possible
  * because the vocabulary is closed.
  */
-function progressTrail(progress) {
+/**
+ * The trail, and whether anything on it is still happening.
+ *
+ * `outcome` is 'running', 'done' or 'stopped'. It exists because a settled
+ * session sends no further progress, so the last frame received stays on screen
+ * for ever - and the last frame of a SUCCESSFUL Albert Heijn login says
+ * `finishing`. The connection was live, fetchable and good for ninety days
+ * while its own progress trail sat there pulsing, apparently mid-step. Nothing
+ * was wrong and everything looked wrong.
+ *
+ * Read off the session state rather than invented: `active` means the connector
+ * said the login finished, so the step it finished on is done. `failed` means
+ * it stopped there, which is worth showing as exactly that - the step where a
+ * login died is the most useful thing on the trail, and marking it done would
+ * be a lie about it.
+ */
+function progressTrail(progress, outcome = 'running') {
   if (!progress) return note('No progress reported yet.');
 
   const done = new Set(progress.steps_done ?? []);
@@ -725,18 +741,40 @@ function progressTrail(progress) {
 
   return h('ol', { class: 'trail' },
     [...STEP_ORDER, ...extra].map((step) => {
-      const isCurrent = step === current;
+      // Only a session that is still going has a step in progress, and only a
+      // step in progress gets a spinner.
+      const isSpinning = step === current && outcome === 'running';
 
-      return h('li', { class: `trail-step ${trailKind(step, current, done)}` },
+      return h('li', { class: `trail-step ${trailKind(step, current, done, outcome)}` },
         h('span', { class: 'trail-dot', 'aria-hidden': 'true' }),
         sayTerm('step', step),
-        isCurrent ? h('span', { class: 'trail-spin', 'aria-hidden': 'true' }) : null);
+        isSpinning ? h('span', { class: 'trail-spin', 'aria-hidden': 'true' }) : null);
     }));
 }
 
-function trailKind(step, current, done) {
-  if (step === current) return 'is-current';
-  return done.has(step) ? 'is-done' : 'is-pending';
+function trailKind(step, current, done, outcome) {
+  if (done.has(step)) return 'is-done';
+
+  if (step === current) {
+    if (outcome === 'done') return 'is-done';
+    if (outcome === 'stopped') return 'is-stopped';
+    return 'is-current';
+  }
+
+  // Steps a settled session never reached did not happen and are not about to.
+  return 'is-pending';
+}
+
+/**
+ * What the trail should say is happening, from the state the connector reports.
+ *
+ * Takes both vocabularies because sessions and jobs share one, as `stateKind`
+ * already assumes: a session settles into `active`, a job into `succeeded`.
+ */
+function trailOutcome(runState) {
+  if (['active', 'succeeded'].includes(runState)) return 'done';
+  if (['failed', 'expired', 'blocked'].includes(runState)) return 'stopped';
+  return 'running';
 }
 
 // ── screen 4: connections ─────────────────────────────────────────────────
@@ -1007,7 +1045,7 @@ function jobPanel(view) {
     h('header', { class: 'card-head' },
       h('div', {}, h('h3', {}, 'Fetch in flight'), h('code', { class: 'muted' }, view.job_id)),
       badge(copy.term('job_state', view.state).text, stateKind(view.state))),
-    progressTrail(view.progress));
+    progressTrail(view.progress, trailOutcome(view.state)));
 }
 
 function paintJobChallenge(row, view) {

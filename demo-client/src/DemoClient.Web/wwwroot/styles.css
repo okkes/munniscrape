@@ -649,6 +649,21 @@ button:disabled {
   animation: pulse 1.4s ease-in-out infinite;
 }
 
+/*
+ * Where a run stopped. Not pending - it is never going to happen now - and not
+ * current, because nothing is in progress and a pulsing dot said otherwise for
+ * as long as the panel stayed on screen.
+ */
+.trail-step.is-stopped {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.trail-step.is-stopped .trail-dot {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+
 .trail-step.is-pending {
   opacity: 0.55;
 }
