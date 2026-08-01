@@ -29,12 +29,19 @@ public sealed class JumboLoginTests
     private static JumboAdapter Adapter(JumboOptions? options = null) =>
         new(options ?? new JumboOptions(), new FakeJumboGraphQl(), new FixedTimeProvider(Now));
 
-    private static FakeJobContext Context(StubLoginPage page, string? storageState = null, bool attended = false) =>
+    /// <param name="answersNothing">
+    /// For the paths that now end in a streamed page. A live view is passive -
+    /// there is no string to type back - so the human acts where we cannot
+    /// observe and never returns an answer.
+    /// </param>
+    private static FakeJobContext Context(
+        StubLoginPage page, string? storageState = null, bool attended = false, bool answersNothing = false) =>
         new()
         {
             Inputs = JumboFixtures.Credentials,
             Browser = new JumboBrowserLease(page, storageState),
             Attended = attended,
+            AnswersNothing = answersNothing,
         };
 
     private static StubLoginPage FormPage(params string[] extra) =>
@@ -109,20 +116,23 @@ public sealed class JumboLoginTests
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
+    /// <summary>
+    /// A box that is not where it was is no longer a dead end. The human on a
+    /// streamed page can see what this could not, so a page the adapter cannot
+    /// drive is handed over rather than failed - and nothing was typed or
+    /// clicked on the way, so nothing has counted against the account.
+    /// </summary>
     [Fact]
-    public async Task A_missing_username_box_is_a_shape_change_and_nothing_went_upstream()
+    public async Task A_missing_username_box_hands_the_page_over_rather_than_failing()
     {
         var page = StubLoginPage.Showing("button[type='submit']");
-        using var ctx = Context(page);
+        using var ctx = Context(page, answersNothing: true);
 
-        var error = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 0), CancellationToken.None));
+        var result = await Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 0), CancellationToken.None);
 
-        Assert.Equal(ErrorCode.ProviderChanged, error.Code);
-        Assert.Contains("username field", error.Detail, StringComparison.Ordinal);
-
-        // Nothing was typed and nothing was clicked, so nothing has counted.
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
         Assert.False(ctx.CredentialWasSubmitted);
+        Assert.NotNull(result.Material.StorageState);
     }
 
     /// <summary>
@@ -133,31 +143,42 @@ public sealed class JumboLoginTests
     /// down.
     /// </summary>
     [Fact]
-    public async Task A_password_box_on_neither_screen_names_both_and_has_already_latched()
+    public async Task A_password_box_on_neither_screen_hands_over_with_the_latch_already_down()
     {
         var page = StubLoginPage.Showing("input#username", "button[type='submit']");
-        using var ctx = Context(page);
+        using var ctx = Context(page, answersNothing: true);
 
-        var error = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 0), CancellationToken.None));
+        var result = await Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 0), CancellationToken.None);
 
-        Assert.Equal(ErrorCode.ProviderChanged, error.Code);
-        Assert.Contains("on either the first or the second step", error.Detail, StringComparison.Ordinal);
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
 
+        // The identifier was already submitted to reach the second screen, so
+        // the account has been touched and the latch must stay down whatever
+        // happens next.
         Assert.True(ctx.CredentialWasSubmitted);
+        Assert.NotNull(result.Material.StorageState);
     }
 
+    /// <summary>
+    /// Both credentials are optional now, so a login with neither is a first
+    /// connect rather than a bad request: the page is simply streamed to the
+    /// person who has one.
+    /// </summary>
     [Fact]
-    public async Task A_blank_credential_is_refused_before_a_page_is_touched()
+    public async Task A_login_with_no_credentials_streams_the_page_instead_of_refusing()
     {
         var page = FormPage();
-        using var ctx = new FakeJobContext { Browser = new JumboBrowserLease(page) };
+        using var ctx = new FakeJobContext
+        {
+            AnswersNothing = true,
+            Browser = new JumboBrowserLease(page),
+        };
 
-        var error = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 0), CancellationToken.None));
+        var result = await Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 0), CancellationToken.None);
 
-        Assert.Equal(ErrorCode.InvalidRequest, error.Code);
-        Assert.Empty(page.Visited);
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
+        Assert.Empty(page.Filled);
+        Assert.NotNull(result.Material.StorageState);
     }
 
     // ---- what the page answers with ---------------------------------------
@@ -179,18 +200,23 @@ public sealed class JumboLoginTests
     /// password that was fine, and a credential error is never retried - so
     /// the mistake would be permanent for that session too.
     /// </summary>
+    /// <summary>
+    /// Silence is still never called a wrong password - it is now handed to
+    /// the human instead, which is the one move that can actually resolve it.
+    /// Guessing "wrong password" would send them to reset one that was fine,
+    /// and a credential error is never retried.
+    /// </summary>
     [Fact]
-    public async Task Silence_is_a_shape_change_and_never_a_wrong_password()
+    public async Task Silence_hands_the_page_over_and_is_never_a_wrong_password()
     {
         var page = FormPage();
-        using var ctx = Context(page);
+        using var ctx = Context(page, answersNothing: true);
 
-        var error = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter(new JumboOptions { LoginSettleSeconds = 0 })
-                .LoginAsync(ctx, page, new StubRedirectWaiter(null, 99), CancellationToken.None));
+        var result = await Adapter(new JumboOptions { LoginSettleSeconds = 0 })
+            .LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 1), CancellationToken.None);
 
-        Assert.Equal(ErrorCode.ProviderChanged, error.Code);
-        Assert.NotEqual(ErrorCode.InvalidCredentials, error.Code);
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
+        Assert.NotNull(result.Material.StorageState);
     }
 
     [Fact]
@@ -217,22 +243,20 @@ public sealed class JumboLoginTests
     /// ask, and saying so at once is worth far more than a hang.
     /// </summary>
     [Fact]
-    public async Task An_interactive_widget_on_an_unattended_agent_is_blocked_at_once()
+    public async Task An_interactive_widget_hands_the_page_to_the_human_who_can_pass_it()
     {
         var page = FormPage("iframe[src*='hcaptcha']");
-        using var ctx = Context(page);
+        using var ctx = Context(page, answersNothing: true);
 
-        var error = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(null, 99), CancellationToken.None));
+        var result = await Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 0), CancellationToken.None);
 
-        Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
-        Assert.NotEqual(ErrorCode.InvalidCredentials, error.Code);
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
+        Assert.NotNull(result.Material.StorageState);
 
-        // Nobody was asked anything, because there was nobody to ask.
-        Assert.Empty(ctx.Asked);
-
-        // And the password left the DOM before the job ended, whichever way it
-        // ended - the runner may photograph this page on the way out.
+        // The password never went into the box, because the wall was seen
+        // first - and the redactor refuses to photograph a page holding one,
+        // so a filled box would have relayed a live view of nothing.
+        Assert.DoesNotContain("input#password", page.Filled.Keys);
         Assert.False(page.HoldsSecret);
     }
 

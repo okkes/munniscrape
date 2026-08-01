@@ -20,7 +20,7 @@ from anywhere. Albert Heijn is yes/no; Coolblue is yes/yes.
 | Picnic | `picnic` | T1 `http` | none (inline) | yes | no | client |
 | Coolblue | `coolblue` | T2 `browser_once` | pooled | yes | **yes** | client |
 | bol.com | `bol` | T2 `browser_once` | pooled | **no** | **yes** | client |
-| Jumbo | `jumbo` | T3 `browser_interactive` | pooled, NL residential | **no** | no — its page is streamed too | client |
+| Jumbo | `jumbo` | T3 `browser_interactive` | pooled, NL residential | **no** | no — walled logins are streamed | client |
 | Amazon.nl | `amazon-nl` | T3 `browser_interactive` | pooled | **no** | **yes** | client |
 | Woo / Magento guest | `woo-guest`, `magento-guest` | T1 `http` | none (inline) | yes | no | client |
 | Mock ×6 | `mock-store-*` | T1 / T4 | none / BYO | yes | no | client / agent |
@@ -44,22 +44,35 @@ provider changes is a deploy-time edit rather than a release.
 
 ## Read this before enabling Jumbo
 
-**The login is streamed, and the typed one no longer runs by default.** A real
-connect on 2026-07-31 sat on `auth.jumbo.com/u/login` for the full 180 seconds
-and failed `provider_changed`. The page was carrying Auth0's
-`captcha-provider="auth0_v2"` — Cloudflare Turnstile — and a Turnstile token is
-minted by the widget's own JavaScript in the browser that rendered it, against
-that browser. There is no picture to relay out and no tap to replay back, so
-the relay this adapter had could only ever have refused it. It never even got
-that far: no selector matched the widget, so no challenge was raised at all and
-the settle loop simply ran out.
+**The login is a hybrid, and both credentials are optional.** A real connect on
+2026-07-31 sat on `auth.jumbo.com/u/login` for the full 180 seconds and failed
+`provider_changed`. The page was carrying Auth0's
+`captcha-provider="auth0_v2"` — Cloudflare Turnstile — whose token is minted by
+the widget's own JavaScript in the browser that rendered it, against that
+browser. There is nothing to photograph out and nothing to tap back, so the
+relay could only ever have refused it. It never got that far: no selector
+matched the widget, so no challenge was raised and the settle loop ran out.
 
-`JumboOptions.LiveLogin` therefore ships `true`. The account's owner sees
-Jumbo's real page, passes Turnstile themselves and types their own password, so
-no credential reaches this platform. `JumboReturnWatcher` was already the
-terminal signal — back on `jumbo.com` and off every login marker — so streaming
-needed no new way to know it had finished. Set it `false` to restore the typed
-form for the day Jumbo drops the wall.
+Auth0 raises it on a **risk score**, so it is there some days and not others.
+That is why the answer is not "always type" or "always stream" but both:
+
+1. The username goes in. It is not a secret, so it may sit in the box while the
+   page is photographed.
+2. The wall is checked — **before the password is typed and before any click**.
+3. No wall: the password goes in, the form is submitted, nobody is disturbed.
+4. Wall, no credentials, or anything the submit fails to resolve: the page is
+   streamed to whoever owns the account and they finish it themselves.
+
+On a walled day the password never enters the DOM at all, which matters twice —
+no attempt is spent against the account, and the redactor refuses to photograph
+a page holding a secret, so a filled box would relay a live view of nothing.
+
+The one outcome that is **not** escalated is a stated wrong password. That has
+to reach the consumer as `invalid_credentials` so a stored credential is
+dropped rather than re-submitted by machine tomorrow.
+
+`JumboReturnWatcher` needed no change: "back on `jumbo.com` and off every login
+marker" was already the terminal signal for both paths.
 
 **Jumbo's GraphQL protocol is not settled, and the adapter cannot be called
 correct until a live capture says so.** This is the blocking discovery task

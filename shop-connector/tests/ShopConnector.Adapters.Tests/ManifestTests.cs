@@ -177,47 +177,40 @@ public sealed class ManifestTests
         Assert.False(manifest.Auth.Reauth.Cheap);
         Assert.Equal(SecretCustody.Client, manifest.SecretCustody);
 
-        // Streamed, since a real connect met Auth0's auth0_v2 captcha -
+        // A form, whose fields are optional. Supply them and the adapter types
+        // them in; supply nothing and the page is streamed from the start.
+        Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
+
+        // One challenge, because there is only one thing worth raising: the
+        // page itself. A real connect met Auth0's auth0_v2 captcha -
         // Cloudflare Turnstile - whose token is minted by its own JavaScript in
-        // the browser that rendered it. There is no picture to relay out and no
-        // tap to replay back, so the browser goes to the human instead.
-        Assert.Equal(AuthFlow.RemoteBrowser, manifest.Auth.Flow);
-
-        // No fields at all, and that is the headline: the connector never sees
-        // the password. The validator refuses a remote_browser flow that
-        // declares one, so this is a boot-time refusal rather than a promise.
-        Assert.Empty(manifest.Auth.Steps);
-        Assert.Empty(manifest.Auth.AllFields());
-
-        // One challenge, because there is only one thing to raise: the page
-        // itself. The typed path's Image/AppApproval/MfaCode list described
-        // walls this adapter met on the human's behalf; a streamed login puts
-        // them in front of the wall instead.
+        // the browser that rendered it, so there is nothing to photograph out
+        // and nothing to tap back. The browser goes to the human instead.
         Assert.Equal([ChallengeType.LiveView], manifest.Auth.Challenges);
+
+        // And the wall reaches them wherever they are, so no agent has to have
+        // somebody standing at it.
+        Assert.False(manifest.LoginNeedsHeadedAgent);
     }
 
     /// <summary>
-    /// The typed login stays reachable for the day Jumbo drops the wall, and
-    /// its manifest still describes itself honestly - two fields, the three
-    /// walls it would have to meet alone, and the headed agent it would need.
+    /// Both credentials are OPTIONAL, which is the contract the hybrid login
+    /// rests on: supply them and the adapter types them in, supply nothing and
+    /// the page is streamed from the start. A consumer that made them required
+    /// would make a first connect impossible to offer.
     /// </summary>
     [Fact]
-    public void Jumbos_typed_login_still_declares_the_form_and_the_walls_it_would_face()
+    public void Jumbo_asks_for_credentials_but_does_not_require_them()
     {
-        var manifest = JumboManifest.Build(liveLogin: false);
+        var manifest = Registry.RequireManifest(JumboAdapter.ProviderId);
 
         Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
         Assert.Equal(["username", "password"], manifest.Auth.AllFields().Select(f => f.Key));
-        Assert.Equal(
-            new[] { ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.MfaCode },
-            manifest.Auth.Challenges);
+        Assert.All(manifest.Auth.AllFields(), f => Assert.False(f.Required));
 
-        // Both flip with the flow. The typed path meets Turnstile itself, so it
-        // needs somebody at that browser - and it is the only shape where a
-        // stored credential is even offerable, because it is the only one that
-        // collects one.
-        Assert.True(manifest.LoginNeedsHeadedAgent);
-        Assert.True(manifest.OffersCredentialStore);
+        // The password is still a secret, optional or not: the redactor keys
+        // on this to refuse a screenshot while the box holds content.
+        Assert.True(manifest.Auth.AllFields().Single(f => f.Key == "password").Secret);
     }
 
     // ---- Lidl: the T2 flagship --------------------------------------------

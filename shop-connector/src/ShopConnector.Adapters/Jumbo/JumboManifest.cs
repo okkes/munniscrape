@@ -41,12 +41,7 @@ internal static class JumboManifest
     /// a mobile-style public client, which is the one route that would hand
     /// over a real refresh token and move this provider to T2.
     /// </summary>
-    /// <param name="liveLogin">
-    /// Stream Jumbo's own page to the account's owner rather than typing into
-    /// it. Built from the option so the flow this declares and the login the
-    /// adapter performs cannot drift apart.
-    /// </param>
-    public static ProviderManifest Build(bool liveLogin = true) => new()
+    public static ProviderManifest Build() => new()
     {
         Id = JumboAdapter.ProviderId,
         Name = "Jumbo",
@@ -65,59 +60,56 @@ internal static class JumboManifest
             Egress = new EgressRequirement { Country = "NL", Kind = "residential" },
         },
         UnattendedFetch = false,              // a human signs in roughly daily
-        // The streamed login relays Auth0's wall to whoever owns the account,
-        // wherever they are, so any agent will do. Only the typed path has to
-        // meet Turnstile itself - and cannot, which is why it is no longer the
-        // default.
-        LoginNeedsHeadedAgent = !liveLogin,
-        // Offerable only on the typed path, and refused outright on the
-        // streamed one by the validator's own rule: a login that collects no
-        // fields has nothing to seal. The streamed login is the better answer
-        // to "asked again tomorrow" anyway - it does not ask for a password at
-        // all, so there is none to keep.
-        OffersCredentialStore = !liveLogin,
+        // Any agent will do. When Auth0 raises its wall the page is streamed
+        // to whoever owns the account, so the person who has to pass it is
+        // never required to be standing at the machine.
+        LoginNeedsHeadedAgent = false,
+        // The reason this exists. Jumbo's cookie cannot be refreshed, so a
+        // real sign-in is wanted again within a day - and on the days Auth0
+        // raises no wall, a stored credential means nobody is disturbed at all.
+        OffersCredentialStore = true,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
         LogoRef = "jumbo",
         NotesKey = MessageKeys.JumboNotes,
         Auth = new AuthSpec
         {
-            Flow = liveLogin ? AuthFlow.RemoteBrowser : AuthFlow.Password,
-            // No fields at all under the streamed login, and that is the
-            // headline: the connector never sees the password. The human types
-            // it into Jumbo's own page, and the validator refuses a
-            // remote_browser flow that declares a field, so this is a boot-time
-            // refusal rather than a promise.
-            Steps = liveLogin
-                ?
-                []
-                :
-                [
-                    new AuthStep
-                    {
-                        Id = "credentials",
-                        LabelKey = MessageKeys.StepCredentials,
-                        Fields =
-                        [
-                            new FieldSpec
-                            {
-                                Key = "username",
-                                Type = FieldType.Text,
-                                Secret = false,
-                                LabelKey = MessageKeys.FieldEmail,
-                                Autofill = "username",
-                            },
-                            new FieldSpec
-                            {
-                                Key = "password",
-                                Type = FieldType.Password,
-                                Secret = true,
-                                LabelKey = MessageKeys.FieldPassword,
-                                Autofill = "current-password",
-                            },
-                        ],
-                    },
-                ],
+            Flow = AuthFlow.Password,
+            // Both OPTIONAL, and that is the contract rather than a
+            // convenience. Supply them and the adapter types them in; supply
+            // nothing and the page is simply streamed to the human from the
+            // start. Either way the wall decides who finishes, because a
+            // Turnstile token is minted in the browser that rendered it and
+            // cannot be relayed or solved from here.
+            Steps =
+            [
+                new AuthStep
+                {
+                    Id = "credentials",
+                    LabelKey = MessageKeys.StepCredentials,
+                    Fields =
+                    [
+                        new FieldSpec
+                        {
+                            Key = "username",
+                            Type = FieldType.Text,
+                            Secret = false,
+                            Required = false,
+                            LabelKey = MessageKeys.FieldEmail,
+                            Autofill = "username",
+                        },
+                        new FieldSpec
+                        {
+                            Key = "password",
+                            Type = FieldType.Password,
+                            Secret = true,
+                            Required = false,
+                            LabelKey = MessageKeys.FieldPassword,
+                            Autofill = "current-password",
+                        },
+                    ],
+                },
+            ],
             // Image for a plain captcha, which can be photographed and typed
             // back. AppApproval for the interactive widgets Auth0 Universal
             // Login actually ships - hCaptcha, reCAPTCHA and Turnstile assets
@@ -141,9 +133,7 @@ internal static class JumboManifest
             // the relay this adapter had could only ever have refused it.
             // Streaming does not relay the wall, it relays the BROWSER, so the
             // human passes it in the page that raised it.
-            Challenges = liveLogin
-                ? [ChallengeType.LiveView]
-                : [ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.MfaCode],
+            Challenges = [ChallengeType.LiveView],
             Session = new SessionSpec
             {
                 TtlSeconds = SessionTtlSeconds,

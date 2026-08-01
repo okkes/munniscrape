@@ -68,7 +68,7 @@ public sealed class JumboAdapter : IProviderAdapter
         _layout = layout ?? new JumboPrintLayoutParser();
         _time = time ?? TimeProvider.System;
 
-        Manifest = JumboManifest.Build(_options.LiveLogin);
+        Manifest = JumboManifest.Build();
 
         // The policy is shared with Albert Heijn and Lidl Plus; only the
         // selectors and the patience are Jumbo's. Auth0 Universal Login ships
@@ -93,26 +93,148 @@ public sealed class JumboAdapter : IProviderAdapter
     {
         ArgumentNullException.ThrowIfNull(ctx);
 
-        // Everything that can fail without contacting anyone, checked before a
-        // browser is leased: launching Chromium to discover a blank field
-        // holds an agent for nothing. The streamed login asks for nothing, so
-        // there is nothing to check.
-        if (!_options.LiveLogin)
-        {
-            _ = RequiredInput(ctx, "username");
-            _ = RequiredInput(ctx, "password");
-        }
-
         ctx.Progress(JobStep.OpeningProvider);
 
         var page = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
         var login = new PlaywrightLoginPage(page, Manifest);
         var watcher = new JumboReturnWatcher(login, _options, _time);
 
-        return _options.LiveLogin
-            ? await LiveLoginAsync(ctx, login, watcher, ct).ConfigureAwait(false)
-            : await LoginAsync(ctx, login, watcher, ct).ConfigureAwait(false);
+        return await LoginAsync(ctx, login, watcher, ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Types what it was given, and hands the page to the human the moment
+    /// Jumbo asks something only they can answer.
+    ///
+    /// Both credentials are OPTIONAL, and that is the design rather than a
+    /// convenience. Auth0 raises Cloudflare Turnstile on a risk score - some
+    /// days it is there and some days it is not - and a Turnstile token is
+    /// minted by its own JavaScript in the browser that rendered it, against
+    /// that browser. It can never be relayed as a picture and never solved
+    /// here. So the wall decides who finishes: on a quiet day the stored
+    /// credential goes in and nobody is disturbed; on a walled day the same
+    /// half-filled page is streamed to whoever owns the account and they carry
+    /// on from where this stopped.
+    ///
+    /// A login with no credentials at all is the same path with nothing typed,
+    /// which is what a first connect looks like.
+    /// </summary>
+    internal async Task<LoginResult> LoginAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(watcher);
+
+        // Minted once, at connect, and carried for the life of the session. A
+        // device that changes identity every run looks like exactly what it is.
+        var deviceId = ctx.Material?.DeviceId ?? Guid.NewGuid().ToString();
+
+        var username = OptionalInput(ctx, "username");
+        var password = OptionalInput(ctx, "password");
+
+        // CONFIRMED-live: this 302s to /api/auth/login and on to Auth0. The
+        // address this adapter used to open, /inloggen, is a 404.
+        await page.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
+        await DismissConsentAsync(page, ct).ConfigureAwait(false);
+
+        // The username first, on its own. It is not a secret, so it may sit in
+        // the box while the page is photographed - and it is the half a human
+        // would otherwise have to go and look up.
+        ctx.Progress(JobStep.Authenticating);
+
+        var identified = username is not null
+                         && await page.FillAsync(
+                                _options.UsernameSelectors, username, _options.SelectorTimeoutMs, ct)
+                            .ConfigureAwait(false);
+
+        // Checked BEFORE the password goes anywhere near the DOM, and before
+        // any click. Two things follow from that: a walled day never spends one
+        // of the account's attempts, and the password is never typed into a
+        // page this run is about to hand to a shutter.
+        //
+        // Interactive alone. A picture captcha is relayable - photographed out,
+        // typed back - and the gate below already does that well; streaming a
+        // whole page to answer one small picture would be the worse experience
+        // for a wall we can already carry. What cannot be carried is a widget:
+        // Turnstile mints its token in the browser that rendered it.
+        var walled = (await _captcha.DetectAsync(page, ct).ConfigureAwait(false)).Kind
+            is CaptchaKind.Interactive;
+
+        var filled = identified
+                     && !walled
+                     && password is not null
+                     && await FillPasswordAsync(ctx, page, password, ct).ConfigureAwait(false);
+
+        if (!filled)
+        {
+            return await LiveLoginAsync(ctx, page, watcher, deviceId, ct).ConfigureAwait(false);
+        }
+
+        // Latch before the credentials leave the machine. After this a lost
+        // lease fails the job rather than requeuing it: a retried login is how
+        // an account gets locked.
+        ctx.CredentialSubmitted();
+
+        if (!await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct).ConfigureAwait(false))
+        {
+            throw Missing("login submit", _options.SubmitSelectors);
+        }
+
+        try
+        {
+            await SettleAsync(ctx, page, watcher, ct).ConfigureAwait(false);
+        }
+        catch (ConnectorException ex) when (ex.Code is ErrorCode.BlockedByProvider or ErrorCode.ProviderChanged)
+        {
+            // The form went in and Jumbo did not hand back a session: a wall
+            // that appeared after the click, a one-time code, something none of
+            // us has seen. Every one of those is answerable by the person who
+            // owns the account, on the page in front of them - so the run is
+            // handed over rather than failed.
+            //
+            // invalid_credentials deliberately does NOT come through here. A
+            // stated wrong password is the one outcome streaming cannot fix,
+            // and it has to reach the consumer so a stored credential is
+            // dropped instead of re-submitted tomorrow.
+            return await LiveLoginAsync(ctx, page, watcher, deviceId, ct).ConfigureAwait(false);
+        }
+
+        ctx.Progress(JobStep.Finalizing);
+        return await HarvestAsync(ctx, deviceId, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Puts the password in, on whichever screen Auth0 is asking for it.
+    ///
+    /// False when the box never appeared, which is not a failure: the page may
+    /// have changed, and the human on a streamed view can see what this could
+    /// not.
+    /// </summary>
+    private async Task<bool> FillPasswordAsync(
+        IJobContext ctx, ILoginPage page, string password, CancellationToken ct)
+    {
+        // Auth0 can ask for the two credentials on two screens. Probed rather
+        // than assumed, with a short budget: on a single-page form the probe
+        // always misses, and that wait is pure latency on every login.
+        if (await page.FillAsync(_options.PasswordSelectors, password, _options.PasswordProbeMs, ct)
+                .ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        // Advancing the wizard submits the identifier, so the account is
+        // touched from here on: latch first, or a lease lost between the click
+        // and the next line would requeue a login that already reached Jumbo.
+        ctx.CredentialSubmitted();
+
+        return await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct).ConfigureAwait(false)
+               && await page.FillAsync(_options.PasswordSelectors, password, _options.SelectorTimeoutMs, ct)
+                   .ConfigureAwait(false);
+    }
+
+    private static string? OptionalInput(IJobContext ctx, string key) =>
+        ctx.Inputs.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
 
     /// <summary>
     /// Jumbo's own login page, streamed to whoever owns the account.
@@ -139,16 +261,29 @@ public sealed class JumboAdapter : IProviderAdapter
     /// password already counted against an account, and this path never submits
     /// one - the attempts are the human's own, on Jumbo's own page.
     /// </summary>
+    /// <param name="deviceId">
+    /// Carried in rather than minted here, so a run that typed first and then
+    /// handed over keeps the identity it started with.
+    /// </param>
     internal async Task<LoginResult> LiveLoginAsync(
-        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, string deviceId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(watcher);
 
-        var deviceId = ctx.Material?.DeviceId ?? Guid.NewGuid().ToString();
-
-        await page.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
+        // Not navigated again: the caller has already opened the page, and on a
+        // walled day it is carrying the username this adapter just typed.
+        // Reloading would throw that away and make the human start over.
+        //
+        // Secrets out first, whatever route got here. The redactor refuses to
+        // photograph a page while a field the manifest calls secret holds
+        // content - correctly - so a password left in the box would relay a
+        // live view of nothing at all. The password is deliberately not typed
+        // before the wall check for exactly this reason; this is the belt to
+        // that brace, for the two-screen path that may have filled one before
+        // a wall appeared.
+        await page.ClearSecretsAsync(ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.AwaitingHuman);
 
@@ -217,99 +352,6 @@ public sealed class JumboAdapter : IProviderAdapter
         {
             Material = new SessionMaterial { StorageState = storageState, DeviceId = deviceId },
             Account = new ProviderAccount { DisplayName = Manifest.Name },
-            ExpiresAt = _time.GetUtcNow().AddSeconds(JumboManifest.SessionTtlSeconds),
-        };
-    }
-
-    /// <summary>
-    /// The whole login, behind the seam.
-    ///
-    /// Internal rather than private so the offline suite can drive it: every
-    /// branch below decides how a human is treated - whether a wall is relayed
-    /// or refused, whether silence is called a wrong password - and none of
-    /// them was reachable without a live Chromium and real credentials.
-    /// </summary>
-    internal async Task<LoginResult> LoginAsync(
-        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(ctx);
-        ArgumentNullException.ThrowIfNull(page);
-
-        var username = RequiredInput(ctx, "username");
-        var password = RequiredInput(ctx, "password");
-
-        // Minted once, at connect, and carried for the life of the session.
-        // Re-using the stored one on a re-login of the same connection is the
-        // whole point: a device that changes identity every run looks like
-        // exactly what it is.
-        var deviceId = ctx.Material?.DeviceId ?? Guid.NewGuid().ToString();
-
-        // CONFIRMED-live: this 302s to /api/auth/login and on to Auth0. The
-        // address this adapter used to open, /inloggen, is a 404.
-        await page.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
-        await DismissConsentAsync(page, ct).ConfigureAwait(false);
-
-        ctx.Progress(JobStep.Authenticating);
-
-        if (!await page.FillAsync(_options.UsernameSelectors, username, _options.SelectorTimeoutMs, ct)
-                .ConfigureAwait(false))
-        {
-            throw Missing("username field", _options.UsernameSelectors);
-        }
-
-        // Auth0 can ask for the two credentials on two screens. Probed rather
-        // than assumed, with a short budget: on a single-page form the probe
-        // always misses, and that wait is pure latency on every login.
-        if (!await page.FillAsync(_options.PasswordSelectors, password, _options.PasswordProbeMs, ct)
-                .ConfigureAwait(false))
-        {
-            // Advancing the wizard submits the identifier, so the account is
-            // touched from here on: latch first, or a lease lost between the
-            // click and the next line would requeue a login that already
-            // reached Jumbo.
-            ctx.CredentialSubmitted();
-
-            if (!await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct)
-                    .ConfigureAwait(false))
-            {
-                throw Missing("identifier submit", _options.SubmitSelectors);
-            }
-
-            if (!await page.FillAsync(_options.PasswordSelectors, password, _options.SelectorTimeoutMs, ct)
-                    .ConfigureAwait(false))
-            {
-                throw Missing("password field, on either the first or the second step", _options.PasswordSelectors);
-            }
-        }
-
-        // Latch before the credentials leave the machine. After this a lost
-        // lease fails the job rather than requeuing it: a retried login is how
-        // an account gets locked. Idempotent, so the two-step path above
-        // having latched already is fine.
-        ctx.CredentialSubmitted();
-
-        if (!await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct).ConfigureAwait(false))
-        {
-            throw Missing("login submit", _options.SubmitSelectors);
-        }
-
-        await SettleAsync(ctx, page, watcher, ct).ConfigureAwait(false);
-
-        ctx.Progress(JobStep.Finalizing);
-
-        var storageState = await ctx.Browser.StorageStateAsync(ct).ConfigureAwait(false);
-        if (JumboCookies.Extract(storageState, _options.CookieDomainSuffix).Count == 0)
-        {
-            throw ConnectorException.ProviderChanged("jumbo: login left no jumbo.com cookies behind");
-        }
-
-        return new LoginResult
-        {
-            Material = new SessionMaterial { StorageState = storageState, DeviceId = deviceId },
-            Account = new ProviderAccount { DisplayName = Manifest.Name },
-            // Stated explicitly rather than left to the manifest, so the
-            // consumer's countdown starts from this login and not from
-            // whenever the bundle happens to be read.
             ExpiresAt = _time.GetUtcNow().AddSeconds(JumboManifest.SessionTtlSeconds),
         };
     }

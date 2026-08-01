@@ -59,19 +59,31 @@ scores one, or asks a service to.
 
 ## The fix
 
-Stream the browser instead of relaying the wall, exactly as Albert Heijn does.
-`JumboOptions.LiveLogin` ships `true`: the page goes to the account's owner,
-who passes Turnstile in the browser that raised it and types their own password.
+Auth0 raises the wall on a **risk score**, so it is there some days and not
+others — which is why the answer is neither "always type" nor "always stream"
+but both. The adapter types the username, checks for the wall before the
+password is typed and before any click, and either finishes the form or hands
+the page to whoever owns the account.
+
+The mobile API was considered and ruled out: `mobileapi.jumbo.com`'s documented
+`v15/users/me` endpoints now 404, and `users/login` is refused at the Akamai
+edge even from a real browser with valid session cookies. Only the app's own
+signed SDK gets through, and reproducing that is fingerprint impersonation.
 
 What it changed:
 
 | | before | after |
 | --- | --- | --- |
-| `auth.flow` | `password` | `remote_browser` |
-| declared fields | username, password | none |
+| `auth.flow` | `password`, both required | `password`, both **optional** |
 | `auth.challenges` | image, app_approval, mfa_code | live_view |
 | `login_needs_headed_agent` | true | false |
-| `offers_credential_store` | true | false — nothing is typed, so nothing to store |
+| `offers_credential_store` | true | true — typed once, then reused |
+
+On a walled day the password never enters the DOM: no attempt is spent, and the
+redactor (which refuses to photograph a page holding a secret) can still relay
+the view. A stated wrong password is the one outcome that is **not** escalated —
+it must reach the consumer so a stored credential is dropped rather than
+re-submitted by machine tomorrow.
 
 `JumboReturnWatcher` needed no change: "back on `jumbo.com` and off every login
 marker" was already the terminal signal, which is why streaming slotted in
