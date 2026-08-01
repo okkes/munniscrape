@@ -115,6 +115,58 @@ permanent for that session. The only path that may report
 
 ---
 
+## bol.com: the order history is settled
+
+**CONFIRMED live, 2026-08-02, against a real account.** Everything below was
+captured from the page itself, so it replaces the guesses this file used to
+carry - the old `?page=` URL 404s and the HTML selectors described a page that
+no longer exists.
+
+The overview is at `https://www.bol.com/nl/nl/account/bestellingen/overzicht/`
+(no `rnwy` segment any more) and **does not paginate by URL**. A "Toon meer"
+button (`[data-testid=show-more-button]`) expands the list in place, and each
+click is a GraphQL call:
+
+```
+POST https://www.bol.com/api/graphql
+operationName: OrdersOverviewClient
+extensions.persistedQuery.sha256Hash:
+  sha256:d195253b815a6082cdee63bef6234513d5c0520c9f064e96fc1a9037d689add2
+variables: { "after": "5" }   then "10", "15" - a string offset, five per page
+```
+
+An automatic persisted query: no document is sent, only the hash. The response:
+
+```
+data.me.orders[]                                     ShopOrder
+  .reference                                         "A000D4P5XN"   the order number
+  .creationDateTime                                  "2025-12-19T22:33:10.329"
+  .items[]                                           ShopOrderItem
+    .quantity                                        1
+    .status.shortTranslatedStatus                    "Bezorgd" | "Verzonden"
+    .offerInformation.productTitle                   the line's name
+    .offerInformation.listPrice.priceInclVat.amount  31.75
+    .offerInformation.retailer.name                  the seller, per line
+```
+
+**The money question is answered.** `amount` is a JSON *number* in major units -
+euros, VAT included - and it is the **unit** price, not the line total. The
+screenshot that produced this shows `2 x € 21,24` against an `amount` of 21.24.
+So a line total is `quantity × amount`, and bol's money hazard - the one this
+file warns is undetectable when both units are wrong the same way - is settled
+by evidence rather than inference.
+
+**There is no order total, and that is the awkward part.** `ShopOrder` states
+none, so a receipt's total can only be the sum of its own lines. That makes
+reconciliation vacuous for bol: it would be comparing a number against itself.
+The connector must not claim a verdict it did not reach, so this needs deciding
+rather than defaulting - see the note in `BolOptions`.
+
+Also worth knowing: the seller is per ITEM, not per order, so one order can
+carry lines from several retailers.
+
+---
+
 ## Per-provider unconfirmed values
 
 ### Albert Heijn (`AlbertHeijnOptions`)

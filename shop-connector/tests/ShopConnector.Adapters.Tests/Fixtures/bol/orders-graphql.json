@@ -1,0 +1,121 @@
+{
+  "data": {
+    "me": {
+      "__typename": "IdentifiedCustomer",
+      "orders": [
+        {
+          "__typename": "ShopOrder",
+          "creationDateTime": "2026-07-29T22:33:10.329",
+          "reference": "A000TEST001",
+          "items": [
+            {
+              "__typename": "ShopOrderItem",
+              "id": "43705078761000",
+              "quantity": 1,
+              "canRequestCancellation": false,
+              "url": "/nl/nl/account/bestellingen/details/A000TEST001/?order_item_id=43705078761000",
+              "assets": {
+                "__typename": "AssetPublication",
+                "assets": [
+                  {
+                    "__typename": "Asset",
+                    "order": 0,
+                    "usage": "primary",
+                    "renditions": [
+                      {
+                        "__typename": "AssetRendition",
+                        "height": 155,
+                        "width": 52,
+                        "url": "https://media.s-bol.com/example/52x155.jpg"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "offerInformation": {
+                "__typename": "ShopOrderOfferInformation",
+                "productTitle": "Wall mounts",
+                "listPrice": {
+                  "__typename": "ShopOrderPrice",
+                  "priceInclVat": { "__typename": "Money", "amount": 31.75 }
+                },
+                "retailer": {
+                  "__typename": "Retailer",
+                  "id": "1452279",
+                  "name": "Snow & Outdoor",
+                  "urls": {
+                    "__typename": "RetailerUrls",
+                    "overview": "/nl/nl/v/snow-outdoor/1452279/"
+                  }
+                }
+              },
+              "status": {
+                "__typename": "ShopOrderItemStatus",
+                "shortTranslatedStatus": "Bezorgd"
+              }
+            }
+          ]
+        },
+        {
+          "__typename": "ShopOrder",
+          "creationDateTime": "2026-07-26T09:05:41.117",
+          "reference": "A000TEST002",
+          "items": [
+            {
+              "__typename": "ShopOrderItem",
+              "id": "43705078762000",
+              "quantity": 2,
+              "canRequestCancellation": false,
+              "url": "/nl/nl/account/bestellingen/details/A000TEST002/?order_item_id=43705078762000",
+              "assets": { "__typename": "AssetPublication", "assets": [] },
+              "offerInformation": {
+                "__typename": "ShopOrderOfferInformation",
+                "productTitle": "Prullenbak - 3 liter - White",
+                "listPrice": {
+                  "__typename": "ShopOrderPrice",
+                  "priceInclVat": { "__typename": "Money", "amount": 21.24 }
+                },
+                "retailer": {
+                  "__typename": "Retailer",
+                  "id": "0",
+                  "name": "bol",
+                  "urls": { "__typename": "RetailerUrls", "overview": "/nl/nl/v/bol/0/" }
+                }
+              },
+              "status": {
+                "__typename": "ShopOrderItemStatus",
+                "shortTranslatedStatus": "Bezorgd"
+              }
+            },
+            {
+              "__typename": "ShopOrderItem",
+              "id": "43705078763000",
+              "quantity": 1,
+              "canRequestCancellation": true,
+              "url": "/nl/nl/account/bestellingen/details/A000TEST002/?order_item_id=43705078763000",
+              "assets": { "__typename": "AssetPublication", "assets": [] },
+              "offerInformation": {
+                "__typename": "ShopOrderOfferInformation",
+                "productTitle": "Y stuk kraan splitter - 3/4 inch",
+                "listPrice": {
+                  "__typename": "ShopOrderPrice",
+                  "priceInclVat": { "__typename": "Money", "amount": 11.99 }
+                },
+                "retailer": {
+                  "__typename": "Retailer",
+                  "id": "999",
+                  "name": "Klusspullen",
+                  "urls": { "__typename": "RetailerUrls", "overview": "/nl/nl/v/klusspullen/999/" }
+                }
+              },
+              "status": {
+                "__typename": "ShopOrderItemStatus",
+                "shortTranslatedStatus": "Verzonden"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
