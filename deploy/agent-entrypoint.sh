@@ -33,23 +33,48 @@ set -eu
 # actually connects. It is the local socket or nothing, and nothing means
 # every browser launch falls back to no display - the exact condition this
 # script exists to remove, arrived at while appearing to fix it.
+display_number="${AGENT_DISPLAY#:}"
+socket="/tmp/.X11-unix/X${display_number}"
+lock="/tmp/.X${display_number}-lock"
+
+# A container starts with no X server, so a lock or socket for our display
+# is by definition a leftover - and the Playwright base image SHIPS one,
+# baked into /tmp at its own build time. Xvfb sees it, refuses with "Server
+# is already active for display 99", exits, and leaves a zombie. The agent
+# then starts perfectly happily with no screen at all and fails every
+# browser job for the life of the container.
+rm -f "$lock" "$socket" 2>/dev/null || true
+
 Xvfb "$AGENT_DISPLAY" -screen 0 "$AGENT_SCREEN" -nolisten tcp &
+xvfb_pid=$!
 
 # Wait for the socket rather than assume it. Chromium started against a
 # display that is not listening yet fails at launch instead of retrying.
-socket="/tmp/.X11-unix/X${AGENT_DISPLAY#:}"
 i=0
 while [ "$i" -lt 100 ]; do
-    [ -S "$socket" ] && break
+    [ -S "$socket" ] && kill -0 "$xvfb_pid" 2>/dev/null && break
     i=$((i + 1))
     sleep 0.1
 done
 
-# Loud, because the alternative is a browser that silently runs without a
-# display and gets refused by a provider ten minutes later.
-[ -S "$socket" ] || echo "agent-entrypoint: WARNING: $socket never appeared; the browser will have no display" >&2
+# Both checks, because either alone lies. A socket can be a file somebody
+# else left behind - which is exactly the bug above, and the reason the
+# original guard passed while nothing was listening. A live process can be
+# one that has not finished binding yet.
+if [ -S "$socket" ] && kill -0 "$xvfb_pid" 2>/dev/null; then
+    export DISPLAY="$AGENT_DISPLAY"
+else
+    # Fatal when the browser is meant to be headed, because a headed agent
+    # without a display is not degraded, it is broken: it will lease jobs
+    # for every provider it advertises and fail all of them. Better the
+    # container dies and Docker's restart policy says so out loud.
+    if [ "${ConnectorAgent__Headless:-true}" = "false" ]; then
+        echo "agent-entrypoint: FATAL: no X server on $AGENT_DISPLAY and Headless=false" >&2
+        exit 1
+    fi
 
-export DISPLAY="$AGENT_DISPLAY"
+    echo "agent-entrypoint: WARNING: no X server on $AGENT_DISPLAY; running headless" >&2
+fi
 
 # `exec` on purpose: the agent replaces this shell and therefore receives
 # SIGTERM from Docker directly. Wrapping it in `xvfb-run` instead would
