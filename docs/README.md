@@ -71,7 +71,7 @@ flowchart LR
    credentials live in services with their own domains, databases, egress
    and kill switches — never in the licensed AISP consumer.
 2. **Pipes, not stores.** Connectors normalise and hand over, then
-   forget. Staged data is purged on ack, or after 7 days regardless.
+   forget. Staged data is purged on ack, or after 24 hours regardless.
 3. **The manifest is the contract.** Each provider declares its auth
    flow, its fields, the challenges it may raise, where its secret lives
    and what resources it serves. munni renders forms from it and needs no

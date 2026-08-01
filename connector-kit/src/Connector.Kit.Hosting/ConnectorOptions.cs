@@ -209,8 +209,17 @@ public sealed class ConnectorTimeouts
     /// </summary>
     public int LiveFramePollSeconds { get; set; } = 5;
 
-    /// <summary>Staged rows die after this regardless of whether the caller ever acked.</summary>
-    public int ResultRetentionDays { get; set; } = 7;
+    /// <summary>
+    /// Staged rows die after this regardless of whether the caller ever acked.
+    ///
+    /// A day, not a week. This is the backstop for a consumer that broke
+    /// between reading a page and acking it, and a backstop measured in days
+    /// is a week of everyone's purchase history sitting here for a bug that
+    /// takes minutes to notice - which is the honeypot the whole staging
+    /// design exists to avoid. The ack is the normal path and costs one call;
+    /// this is only for when it never comes.
+    /// </summary>
+    public int ResultRetentionDays { get; set; } = 1;
 
     public int EnrollmentCodeSeconds { get; set; } = 900;
 

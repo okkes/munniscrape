@@ -39,7 +39,7 @@ a review checklist:
   after the credential went upstream fails permanently rather than
   requeuing.
 - **Connectors are pipes, not stores.** Normalised rows are staged and
-  purged on ack, or after seven days regardless. Raw provider payloads are
+  purged on ack, or after 24 hours regardless. Raw provider payloads are
   opt-in per fetch (`include=raw`), ride the same row as the record so the
   same ack purges them, and are withheld from the catalogue entirely in
   production. Neither service may become the honeypot holding both retail

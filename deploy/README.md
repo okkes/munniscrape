@@ -135,7 +135,7 @@ What the shape gives you:
 - **Restart policy is `unless-stopped` everywhere**, so a NAS reboot
   brings the stack back but an operator's `docker compose stop` sticks.
 - **There is no backup service.** A connector stages data for at most
-  seven days and owns no durable user record. A nightly dump would back up
+  24 hours and owns no durable user record. A nightly dump would back up
   sealed sessions and little else, which is a liability, not a safety net.
   What must survive is in the GitHub Environment, not in Postgres.
 

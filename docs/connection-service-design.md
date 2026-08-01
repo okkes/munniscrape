@@ -383,7 +383,7 @@ prerequisite to slice S2.
 ## 7 · Data retention — stay a pipe
 
 - Normalized rows are **staged**, not owned: purged on `ack`, or after a
-  hard TTL (7 days) if munni never acks.
+  hard TTL (24 hours) if munni never acks.
 - Raw provider payloads: off by default; opt-in per provider for
   debugging, 24h TTL, never for a real user without a flag.
 - Failure artifacts (screenshot + DOM snapshot) are the thing that makes

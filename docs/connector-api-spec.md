@@ -459,7 +459,7 @@ POST /v1/{provider}/{resource}/ack               { "cursor": "cur_…" }   ← "
 ```
 
 `ack` is what keeps the connector a pipe: acknowledged rows are deleted
-immediately; unacknowledged rows die after 7 days regardless.
+immediately; unacknowledged rows die after 24 hours regardless.
 
 **One-shot convenience form** for callers that want a single round trip
 and do not need the ticket:

@@ -1182,7 +1182,7 @@ function deliverInto(results, row, resource, result) {
         : note('No cursor: nothing was staged, so there is nothing to ack.'),
 
       note('Ack is what keeps the connector a pipe. Acknowledged rows are deleted immediately; ',
-        'anything unacknowledged dies after seven days regardless.'),
+        'anything unacknowledged dies after 24 hours regardless.'),
       ackBox),
 
     records(result.shape, result.data));
