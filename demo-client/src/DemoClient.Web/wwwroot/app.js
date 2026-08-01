@@ -145,7 +145,14 @@ function allProviders() {
  */
 function refusal(manifest) {
   const status = manifest.status ?? {};
-  if (status.state && status.state !== 'healthy') {
+
+  // Only the two states that really refuse work. `degraded` is defined by the
+  // platform as "something is wrong and an operator knows; work still flows",
+  // and ProviderStatus.AcceptsWork agrees - so hiding Connect for it did not
+  // merely contradict the connector, it deadlocked: degraded is cleared only
+  // by a SUCCESSFUL job, and there is no successful job without a Connect
+  // button. One failed login left a provider unreachable for good.
+  if (status.state === 'paused' || status.state === 'retired') {
     return {
       title: `Connections are ${copy.term('provider_state', status.state).text.toLowerCase()}.`,
       reasonKey: status.reason_key ?? null,
@@ -232,7 +239,28 @@ function providerCard(service, manifest) {
 
     providerFacts(manifest),
     manifest.notes_key ? note(sayKey(manifest.notes_key)) : null,
-    blocked ? blockedNotice(blocked) : connectAction(service, manifest));
+    blocked
+      ? blockedNotice(blocked)
+      : [warning(manifest), connectAction(service, manifest)]);
+}
+
+/**
+ * Said, not enforced. A degraded provider is one an operator already knows
+ * about and whose work still flows, so the honest rendering is a caveat beside
+ * a live Connect button rather than a wall in front of it - and it is the
+ * only way the state ever clears, since a successful job is what recovers it.
+ */
+function warning(manifest) {
+  const status = manifest.status ?? {};
+  if (status.state !== 'degraded') return null;
+
+  return h('div', { class: 'alert alert-notice' },
+    h('div', { class: 'alert-head' },
+      badge('degraded', 'warn'),
+      h('strong', {}, 'Recent runs hit something unexpected.')),
+    status.reason_key ? h('p', { class: 'alert-hint' }, sayKey(status.reason_key)) : null,
+    h('p', { class: 'alert-hint' }, 'Connecting still works, and a run that succeeds clears this.'),
+    status.since ? h('p', { class: 'alert-meta' }, h('code', {}, `since ${dateTime(status.since)}`)) : null);
 }
 
 function providerFacts(manifest) {
