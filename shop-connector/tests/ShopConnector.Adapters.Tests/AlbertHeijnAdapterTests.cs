@@ -352,7 +352,7 @@ public sealed class AlbertHeijnAdapterTests
     }
 
     [Fact]
-    public async Task Raw_without_items_has_nothing_to_carry_and_says_so()
+    public async Task Raw_without_items_hands_back_the_list_row_rather_than_nothing()
     {
         var handler = new StubHttpHandler(Route);
         using var ctx = new FakeJobContext(handler)
@@ -363,12 +363,64 @@ public sealed class AlbertHeijnAdapterTests
         var result = await Adapter().FetchAsync(
             ctx, Requests.Receipts(items: false, raw: true), CancellationToken.None);
 
-        // The detail call is the only place a raw document exists, and it only
-        // happens when items were asked for. Empty rather than the list page:
-        // one receipt's row is not the same thing as everybody's.
         Assert.Equal(2, result.Receipts.Count);
-        Assert.Empty(result.Raw);
+
+        // Every receipt still carries the document it came from. Returning
+        // nothing here read as "the provider sent nothing" rather than "you did
+        // not ask for the call that produces the richer one".
+        Assert.Equal(2, result.Raw.Count);
+
+        var first = result.Receipts[0];
+        var raw = Assert.Contains(first.ExternalId, result.Raw);
+
+        // The receipt's OWN row, not the page it arrived on: the page carries
+        // every other receipt in the pass.
+        Assert.Contains(first.ExternalId, raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("posReceiptsPage", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain(result.Receipts[1].ExternalId, raw, StringComparison.Ordinal);
+
+        // And still no detail call, so asking for raw did not quietly make the
+        // fetch expensive.
         Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Raw_with_items_prefers_the_detail_document_over_the_list_row()
+    {
+        var handler = new StubHttpHandler(Route);
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = new SessionMaterial { AccessToken = "live" },
+        };
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(since: Requests.Day(2026, 7, 15), raw: true), CancellationToken.None);
+
+        var receipt = Assert.Single(result.Receipts);
+        var raw = Assert.Contains(receipt.ExternalId, result.Raw);
+
+        // The richer of the two: it is the one carrying the line items, which
+        // is where a renamed field actually shows up.
+        Assert.Contains("posReceiptDetails", raw, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_fetch_that_did_not_ask_for_raw_pays_nothing_to_keep_one()
+    {
+        var handler = new StubHttpHandler(Route);
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = new SessionMaterial { AccessToken = "live" },
+        };
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(items: false), CancellationToken.None);
+
+        // Not merely absent from the result - never stringified in the first
+        // place, which on a two-hundred-receipt page is the difference worth
+        // having.
+        Assert.NotEmpty(result.Receipts);
+        Assert.Empty(result.Raw);
     }
 
     // ---- pagination --------------------------------------------------------

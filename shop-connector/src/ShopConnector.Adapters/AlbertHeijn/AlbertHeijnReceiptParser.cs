@@ -18,6 +18,18 @@ internal sealed record AhReceiptSummary
     /// repeated back at us.
     /// </summary>
     public required Money Total { get; init; }
+
+    /// <summary>
+    /// This receipt's own row from the list response, verbatim, when
+    /// <c>include=raw</c> asked for one - and null otherwise, because keeping
+    /// the text of every row on a two-hundred-receipt page nobody asked about
+    /// is a cost paid for nothing.
+    ///
+    /// The row and never the page: the page carries every other receipt in the
+    /// pass, and handing one caller somebody else's rows would be a worse leak
+    /// than the shape change this exists to diagnose.
+    /// </summary>
+    public string? Raw { get; init; }
 }
 
 /// <summary>
@@ -57,7 +69,12 @@ internal static class AlbertHeijnReceiptParser
         throw ConnectorException.ProviderChanged($"{ProviderId}: graphql returned an error ({message})");
     }
 
-    public static IReadOnlyList<AhReceiptSummary> ParseList(JsonElement root, AlbertHeijnOptions options)
+    /// <param name="keepRaw">
+    /// Keep each row's own text on the summary. Off unless the caller asked for
+    /// raw, so the common fetch does not pay to stringify a page it will drop.
+    /// </param>
+    public static IReadOnlyList<AhReceiptSummary> ParseList(
+        JsonElement root, AlbertHeijnOptions options, bool keepRaw = false)
     {
         if (!TryField(root, "posReceiptsPage", out var page))
         {
@@ -107,6 +124,7 @@ internal static class AlbertHeijnReceiptParser
                     JsonAccess.StrOf(row, "dateTime"), zone, ProviderId, "posReceipt.dateTime"),
                 Total = MoneyReader.Require(row, options.ListTotalUnit, options.Currency,
                     "posReceipt.totalAmount", "totalAmount"),
+                Raw = keepRaw ? row.GetRawText() : null,
             });
         }
 

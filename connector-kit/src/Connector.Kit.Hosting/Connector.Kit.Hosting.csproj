@@ -21,6 +21,12 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <!--
+      Scaffolding only - `dotnet ef migrations add` needs it in the project
+      that owns the DbContext. PrivateAssets keeps it out of anything that
+      references this library, and out of the published image.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <!--
       Production auth is JWT bearer; the shared framework does not carry the
       handler. Development mode never touches this assembly.
     -->

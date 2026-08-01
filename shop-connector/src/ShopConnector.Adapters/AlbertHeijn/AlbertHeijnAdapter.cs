@@ -135,6 +135,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
             IReadOnlyList<ReceiptItem> items = [];
             var payment = ReceiptFactory.Payment();
+            string? detailRaw = null;
 
             if (request.WantsItems)
             {
@@ -146,11 +147,19 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
                 items = AlbertHeijnReceiptParser.ParseItems(detail.RootElement, _options);
                 payment = AlbertHeijnReceiptParser.ParsePayment(detail.RootElement, _options);
 
-                // The detail and nothing else: the list page carries every
-                // other receipt in the pass, and handing one caller another
-                // shopper's rows back would be a worse leak than the one this
-                // exists to diagnose.
-                if (request.WantsRaw) raw[summary.Id] = detail.RootElement.GetRawText();
+                // The detail document, which is the richer of the two and the
+                // one worth having when a field moves.
+                if (request.WantsRaw) detailRaw = detail.RootElement.GetRawText();
+            }
+
+            // Whichever document this receipt actually came from. Without
+            // items there is no detail call and never was one, and returning
+            // nothing for `raw` - which is what this did - reads as "the
+            // provider sent nothing" rather than "you did not ask for the call
+            // that produces it". The list row is a real answer.
+            if (request.WantsRaw && (detailRaw ?? summary.Raw) is { } document)
+            {
+                raw[summary.Id] = document;
             }
 
             // The list's total against the detail's own lines is the one
@@ -559,7 +568,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
                 ["limit"] = pageSize,
             }, "receipt list", ct).ConfigureAwait(false);
 
-            var rows = AlbertHeijnReceiptParser.ParseList(document.RootElement, _options);
+            var rows = AlbertHeijnReceiptParser.ParseList(document.RootElement, _options, request.WantsRaw);
             if (rows.Count == 0) break;
 
             var fresh = 0;

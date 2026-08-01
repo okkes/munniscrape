@@ -41,7 +41,12 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
     /// </summary>
     public async Task EnsureCreatedOrMigrateAsync(CancellationToken ct = default)
     {
-        if (Database.GetMigrations().Any())
+        // Migrations only where they exist, and they are scaffolded for Npgsql
+        // alone: a migration carries the SQL of the provider it was generated
+        // for, so replaying Postgres DDL onto Sqlite would fail on the first
+        // statement. Sqlite is the test path - a fresh file every run, where
+        // EnsureCreated is both correct and faster.
+        if (Database.IsNpgsql() && Database.GetMigrations().Any())
         {
             await Database.MigrateAsync(ct);
             return;
