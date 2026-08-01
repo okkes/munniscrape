@@ -48,7 +48,68 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
         }
 
         await Database.EnsureCreatedAsync(ct);
+        await AssertSchemaMatchesModelAsync(ct);
     }
+
+    /// <summary>
+    /// Refuses to start against a database that is missing something the model
+    /// has.
+    ///
+    /// <c>EnsureCreated</c> creates missing TABLES and nothing else. A column
+    /// added to an entity after the database exists is simply never created, so
+    /// the service starts perfectly happily and then throws a 500 the first
+    /// time a request writes that column - which reads to whoever hit it as a
+    /// broken provider rather than a schema that was never brought forward.
+    /// That happened: two columns landed in one afternoon and the first user to
+    /// press Connect got "Something broke on our side."
+    ///
+    /// One empty SELECT per table, naming every column the model expects. It
+    /// costs a handful of round trips at start-up, uses the database's own
+    /// answer rather than a hand-rolled diff, and works on any relational
+    /// provider because it is just SQL. A mismatch becomes a refusal to start
+    /// with the table named - the same call this file's neighbours make about
+    /// a manifest that lies.
+    /// </summary>
+    private async Task AssertSchemaMatchesModelAsync(CancellationToken ct)
+    {
+        foreach (var entity in Model.GetEntityTypes())
+        {
+            if (entity.GetTableName() is not { } table) continue;
+
+            var columns = entity.GetProperties()
+                .Select(p => p.GetColumnName())
+                .Where(c => !string.IsNullOrEmpty(c))
+                .Select(Quote)
+                .ToList();
+
+            if (columns.Count == 0) continue;
+
+            // Built here rather than interpolated at the call site so it is
+            // plain that nothing in it came from a request: every identifier is
+            // read off the EF model this assembly was compiled with, and each
+            // one goes through Quote. WHERE 1 = 0 so this reads nothing and
+            // still has to resolve every name.
+            var probe = "SELECT " + string.Join(", ", columns) + " FROM " + Quote(table) + " WHERE 1 = 0";
+
+            try
+            {
+                await Database.ExecuteSqlRawAsync(probe, ct);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"the '{table}' table does not match the model this build expects. " +
+                    "EnsureCreated only ever creates missing tables, so a column added since " +
+                    "this database was created is absent and every write touching it fails at " +
+                    "request time. Bring the schema forward, or drop the database if it holds " +
+                    "nothing worth keeping.",
+                    ex);
+            }
+        }
+    }
+
+    private static string Quote(string identifier) =>
+        '"' + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + '"';
 
     /// <summary>
     /// The provider switch, exposed so a test can build a context without the
