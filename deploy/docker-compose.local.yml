@@ -250,6 +250,18 @@ services:
       BUILD_NUMBER: local
     ports:
       - "8430:8080"
+    volumes:
+      # The Prefill button's source, and the only reason it ever finds
+      # anything. PrefillStore looks from the content root upwards, and in a
+      # container that search has nowhere to arrive - so the button reported
+      # "no saved credentials" for every provider, including ones the file
+      # names, and looked like a bug in the store rather than a missing mount.
+      #
+      # Read-only, and deliberately not baked into the image: it holds real
+      # passwords in plain text, is gitignored, and exists so a developer can
+      # re-run a login without retyping. `:ro` and a bind rather than a COPY
+      # is what keeps it on the developer's disk.
+      - ../demo-client/credentials.local.jsonc:/app/credentials.local.jsonc:ro
     healthcheck:
       # /api/services asks both connectors for their catalogue, so a
       # healthy demo client means the whole chain answered.

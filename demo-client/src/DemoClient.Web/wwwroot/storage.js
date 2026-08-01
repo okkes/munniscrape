@@ -20,6 +20,21 @@
 
 const KEY = 'munni.demo.connections.v1';
 
+/**
+ * Sealed credentials, keyed by provider rather than by connection.
+ *
+ * A connection is one session and dies with it; the whole point of this is the
+ * NEXT one, so it outlives any single row. Same sessionStorage and therefore
+ * the same web custody rule: it dies with the tab, which is the boundary this
+ * app already commits to.
+ *
+ * It is ciphertext only the connector can open, bound to this subject and this
+ * provider, so a blob lifted out of here is useless to anybody else. That is
+ * the entire reason a password may be kept at all - what is stored is not the
+ * password.
+ */
+const CREDENTIALS_KEY = 'munni.demo.credentials.v1';
+
 const listeners = new Set();
 
 function read() {
@@ -38,6 +53,51 @@ function read() {
 function write(rows) {
   globalThis.sessionStorage.setItem(KEY, JSON.stringify(rows));
   for (const fn of listeners) fn(rows);
+}
+
+// ── sealed credentials ────────────────────────────────────────────────────
+
+function readCredentials() {
+  try {
+    const raw = globalThis.sessionStorage.getItem(CREDENTIALS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The sealed credential bundle for a provider, or null. */
+export function credentials(service, provider) {
+  return readCredentials()[`${service}:${provider}`] ?? null;
+}
+
+/**
+ * Keeps what the connector sealed, so the next login needs no typing.
+ *
+ * Called with whatever the login response carried, which for most providers is
+ * nothing at all - only a provider declaring `offers_credential_store` ever
+ * mints one, and only when a password was actually collected.
+ */
+export function rememberCredentials(service, provider, bundle) {
+  if (!bundle) return;
+
+  const all = readCredentials();
+  all[`${service}:${provider}`] = bundle;
+  globalThis.sessionStorage.setItem(CREDENTIALS_KEY, JSON.stringify(all));
+}
+
+/**
+ * Drops it. Called when the connector says the credential itself is wrong -
+ * the one answer that must never be retried, because a stored password
+ * re-submitted on a schedule is how an account gets locked.
+ */
+export function forgetCredentials(service, provider) {
+  const all = readCredentials();
+  if (!(`${service}:${provider}` in all)) return;
+
+  delete all[`${service}:${provider}`];
+  globalThis.sessionStorage.setItem(CREDENTIALS_KEY, JSON.stringify(all));
 }
 
 /** Stable per (service, provider, session) so a re-login replaces its row. */

@@ -172,6 +172,28 @@ function refusal(manifest) {
   return null;
 }
 
+/**
+ * Says a sealed credential is held for this provider, so the boxes may be left
+ * empty.
+ *
+ * Only providers declaring `offers_credential_store` ever produce one - the
+ * shape where a session cannot be refreshed and the alternative is asking the
+ * same person for the same password every morning. It is ciphertext bound to
+ * this subject and this provider, so what sits in the tab is not the password,
+ * and it dies with the tab like everything else here.
+ */
+function savedCredentialsNotice(service, manifest) {
+  if (!store.credentials(service.key, manifest.id)) return null;
+
+  return h('div', { class: 'alert alert-notice' },
+    h('div', { class: 'alert-head' },
+      badge('saved', 'good'),
+      h('strong', {}, 'This tab is holding a sealed sign-in for this provider.')),
+    h('p', { class: 'alert-hint' },
+      'Leave the boxes empty and press Connect to use it. Type something instead and ',
+      'what you type wins - the connector reads the saved one only when nothing was sent.'));
+}
+
 function toast(message, kind = 'info') {
   const node = h('div', { class: `toast toast-${kind}` }, message);
   el('toasts').append(node);
@@ -405,12 +427,29 @@ function renderConnect() {
     submit.disabled = true;
     submit.textContent = 'Connecting...';
     try {
+      const typed = form.values();
+
+      // Offered only when nothing was typed. The connector reads it on the
+      // same terms - inputs win - so a human at the form is never overruled
+      // by something their device remembered.
+      const saved = Object.keys(typed.inputs ?? {}).length === 0
+        ? store.credentials(service.key, manifest.id)
+        : null;
+
       await startLogin(service, manifest, {
-        ...form.values(),
+        ...typed,
+        credential_bundle: saved ?? undefined,
         label: label.value.trim() || undefined,
         prefer_agent: routing?.value() || undefined,
       });
     } catch (error) {
+      // The one answer a stored credential must not survive. Anything else -
+      // a wall, a timeout, a provider having a bad day - leaves it alone.
+      if (error?.code === 'invalid_credentials') {
+        store.forgetCredentials(service.key, manifest.id);
+        toast('That sign-in was refused, so the saved credentials were dropped.', 'warn');
+      }
+
       mount(errors, errorBlock(error));
     } finally {
       submit.disabled = false;
@@ -432,6 +471,7 @@ function renderConnect() {
       note('Every field below was generated from this provider\'s manifest - its type, its pattern, ',
         'its label key and its autofill hint. Nothing in this app knows what "',
         h('code', {}, manifest.id), '" is.'),
+      savedCredentialsNotice(service, manifest),
       shell),
 
     agentsPanel(service, manifest));
@@ -573,6 +613,16 @@ async function settle(view) {
   run.stop = null;
 
   if (view.state !== 'active') {
+    // A login can fail long after the POST returned - on an agent, minutes
+    // later - so the stored credential has to be dropped here too, not only
+    // in the submit handler's catch. Only for a stated credential failure:
+    // a wall, a timeout or a provider having a bad day must leave it alone,
+    // or one flaky evening throws away a password for nothing.
+    if (view.error?.code === 'invalid_credentials') {
+      store.forgetCredentials(run.service.key, run.manifest.id);
+      toast('That sign-in was refused, so the saved credentials were dropped.', 'warn');
+    }
+
     updateLogin();
     return;
   }
@@ -619,6 +669,11 @@ function persist(serviceKey, manifest, view) {
     row.bundle = view.bundle;
     row.bundleIssuedAt = new Date().toISOString();
   }
+
+  // Delivered exactly once, like the session bundle, and only by a provider
+  // that declares offers_credential_store. Kept against the provider rather
+  // than this connection, because the point of it is the next one.
+  store.rememberCredentials(serviceKey, manifest.id, view.credential_bundle);
 
   store.save(row);
   return id;

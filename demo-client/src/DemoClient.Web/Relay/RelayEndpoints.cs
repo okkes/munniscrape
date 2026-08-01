@@ -181,6 +181,12 @@ public static class RelayEndpoints
                 Config = body?.Config ?? Empty,
                 PreferAgent = body?.PreferAgent,
 
+                // Revealed only here, into the outbound body. The relay is a
+                // pipe for this exactly as it is for a session bundle.
+                CredentialBundle = body?.CredentialBundle.IsPresent == true
+                    ? body.CredentialBundle.Reveal()
+                    : null,
+
                 // Only when the operator states that this consumer shows
                 // terms. Inventing a consent record the user never saw would
                 // be a lie told in JSON.
@@ -686,6 +692,19 @@ public sealed record LoginBody
 
     /// <summary>Required by a <c>device_persistent</c> provider, absent for every other.</summary>
     public string? PreferAgent { get; init; }
+
+    /// <summary>
+    /// A sealed credential the browser kept from an earlier login, offered
+    /// instead of typing the password again.
+    /// </summary>
+    /// <remarks>
+    /// Passed through and never stored, exactly like a session bundle - and
+    /// wearing <see cref="Bundle"/> for the same reason, so it redacts itself
+    /// rather than turning up whole in a log line. Only a provider declaring
+    /// <c>offers_credential_store</c> ever mints one, and the connector reads
+    /// it only when <see cref="Inputs"/> is empty.
+    /// </remarks>
+    public Bundle CredentialBundle { get; init; }
 }
 
 public sealed record FetchBody
@@ -727,6 +746,9 @@ internal sealed record ConnectorLoginRequest
     public required IReadOnlyDictionary<string, string> Config { get; init; }
 
     public string? PreferAgent { get; init; }
+
+    /// <summary>Forwarded verbatim; the relay cannot open it and keeps no copy.</summary>
+    public string? CredentialBundle { get; init; }
 
     public ConnectorConsent? Consent { get; init; }
 }
