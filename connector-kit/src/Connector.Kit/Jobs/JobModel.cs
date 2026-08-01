@@ -91,6 +91,17 @@ public static class JobStateMachine
 /// </summary>
 public sealed record ResourceRequest
 {
+    /// <summary>The multi-valued param that selects optional extras.</summary>
+    public const string IncludeParam = "include";
+
+    /// <summary>
+    /// The <see cref="IncludeParam"/> value asking for the provider's own
+    /// payload. Named here rather than spelled out at each site, so the
+    /// registry that may withhold it and the request that reads it cannot
+    /// drift apart.
+    /// </summary>
+    public const string RawInclude = "raw";
+
     public required string ResourceId { get; init; }
 
     public DateOnly? Since { get; init; }
@@ -102,7 +113,7 @@ public sealed record ResourceRequest
         new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
     public IReadOnlyList<string> Include =>
-        Selections.TryGetValue("include", out var v) ? v : [];
+        Selections.TryGetValue(IncludeParam, out var v) ? v : [];
 
     public IReadOnlyList<string> Accounts =>
         Selections.TryGetValue("accounts", out var v) ? v : [];
@@ -122,5 +133,5 @@ public sealed record ResourceRequest
     /// that purges one purges the other and there is no second lifetime for
     /// anybody to get wrong.
     /// </summary>
-    public bool WantsRaw => Include.Contains("raw", StringComparer.Ordinal);
+    public bool WantsRaw => Include.Contains(RawInclude, StringComparer.Ordinal);
 }

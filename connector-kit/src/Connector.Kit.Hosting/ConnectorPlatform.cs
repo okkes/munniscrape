@@ -60,8 +60,12 @@ public static class ConnectorPlatform
 
         services.AddDbContext<ConnectorDbContext>(builder => ConnectorDbContext.Configure(builder, options.Database));
 
+        // Raw payloads are a development affordance and the README says so:
+        // "connectors are pipes, not stores... raw provider payloads are off
+        // in production". Withholding it here rather than at the request means
+        // the catalogue never advertises what production would refuse.
         services.AddSingleton<IProviderRegistry>(sp =>
-            new ProviderRegistry(sp.GetServices<IProviderAdapter>()));
+            new ProviderRegistry(sp.GetServices<IProviderAdapter>(), offerRawPayloads: !options.IsProduction));
 
         services.AddSingleton<IBundleKeyRing>(_ => BuildKeyRing(options));
         services.AddSingleton(sp => new SealedBundleCodec(

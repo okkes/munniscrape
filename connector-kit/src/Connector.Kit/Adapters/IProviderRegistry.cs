@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Connector.Kit.Errors;
+using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
 
 namespace Connector.Kit.Adapters;
@@ -42,7 +45,27 @@ public sealed class ProviderRegistry : IProviderRegistry
     private readonly Dictionary<string, ProviderManifest> _manifests;
     private readonly Dictionary<string, IProviderAdapter> _adapters;
 
-    public ProviderRegistry(IEnumerable<IProviderAdapter> adapters)
+    /// <param name="offerRawPayloads">
+    /// Whether resources may offer <c>include=raw</c> - the provider's own
+    /// document beside each record.
+    /// </param>
+    /// <remarks>
+    /// False strips the value from every resource that declares it, which is
+    /// the whole gate and needs no second one: the catalogue then never
+    /// advertises raw, and <c>ParamBinder</c> already refuses an
+    /// <c>include</c> value a resource does not list. A caller asking anyway
+    /// gets <c>invalid_request</c> naming the value, rather than a silent
+    /// empty field it would read as the provider sending nothing.
+    /// <para>
+    /// Withheld in production because raw is strictly the more sensitive of
+    /// the two - normalisation drops the fields nobody asked for and this puts
+    /// them back - and because the argument that neither service becomes the
+    /// honeypot holding everyone's purchase history is easier to make when the
+    /// unabridged version is not on offer at all. Diagnosing a shape change is
+    /// what a development deployment is for.
+    /// </para>
+    /// </remarks>
+    public ProviderRegistry(IEnumerable<IProviderAdapter> adapters, bool offerRawPayloads = true)
     {
         ArgumentNullException.ThrowIfNull(adapters);
 
@@ -51,7 +74,11 @@ public sealed class ProviderRegistry : IProviderRegistry
 
         foreach (var adapter in adapters)
         {
-            var manifest = adapter.Describe();
+            var described = adapter.Describe();
+            var manifest = offerRawPayloads ? described : WithoutRawPayloads(described);
+
+            // Validated after the strip, so what is served is what was
+            // checked.
             ManifestValidator.Validate(manifest);
 
             if (!_manifests.TryAdd(manifest.Id, manifest))
@@ -78,13 +105,57 @@ public sealed class ProviderRegistry : IProviderRegistry
             ? m
             : throw ConnectorException.Unsupported($"unknown provider '{providerId}'");
 
+    /// <summary>
+    /// The same manifest with <c>raw</c> taken off every <c>include</c> it
+    /// appears on, and everything else untouched.
+    ///
+    /// A resource that never offered it is returned as-is, so this changes no
+    /// digest it does not have to: the catalogue ETag moves only for the
+    /// providers that actually lost a value.
+    /// </summary>
+    private static ProviderManifest WithoutRawPayloads(ProviderManifest manifest) => manifest with
+    {
+        Resources = [.. manifest.Resources.Select(WithoutRawPayloads)],
+    };
+
+    private static ResourceSpec WithoutRawPayloads(ResourceSpec resource) => resource with
+    {
+        Params = [.. resource.Params.Select(WithoutRawPayloads)],
+    };
+
+    private static ParamSpec WithoutRawPayloads(ParamSpec param) =>
+        param.Key == ResourceRequest.IncludeParam
+        && param.Values is { } values
+        && values.Contains(ResourceRequest.RawInclude, StringComparer.Ordinal)
+            ? param with
+            {
+                Values = [.. values.Where(v => v != ResourceRequest.RawInclude)],
+            }
+            : param;
+
     public bool TryGetAdapter(string providerId, out IProviderAdapter adapter) =>
         _adapters.TryGetValue(providerId, out adapter!);
 
+    /// <summary>
+    /// Over the whole catalogue as a consumer receives it, not over its
+    /// version numbers.
+    ///
+    /// It hashed <c>id:manifest_version</c> pairs, which made the ETag wrong
+    /// for every change that deliberately does not bump a version - and most
+    /// do not, because <c>ManifestVersion</c> is sealed into bundles as AAD, so
+    /// moving it to bust a cache would invalidate every credential a user
+    /// holds. Adding a challenge type, a resource param, or withholding raw in
+    /// production all left the digest identical, and a consumer revalidating
+    /// against it kept rendering a form the service had stopped accepting.
+    ///
+    /// Serialised through the wire options, so this hashes exactly the bytes
+    /// the catalogue endpoint returns: two processes on the same build agree,
+    /// and any change a consumer could see moves it.
+    /// </summary>
     private static string ComputeDigest(IReadOnlyList<ProviderManifest> manifests)
     {
-        var seed = string.Join('|', manifests.Select(m => $"{m.Id}:{m.ManifestVersion}"));
-        var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed));
+        var seed = JsonSerializer.SerializeToUtf8Bytes(manifests, ConnectorWireJson.Options);
+        var digest = SHA256.HashData(seed);
         return "sha256:" + Convert.ToHexStringLower(digest);
     }
 }

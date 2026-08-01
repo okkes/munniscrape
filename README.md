@@ -40,8 +40,10 @@ a review checklist:
   requeuing.
 - **Connectors are pipes, not stores.** Normalised rows are staged and
   purged on ack, or after seven days regardless. Raw provider payloads are
-  off in production. Neither service may become the honeypot holding both
-  retail credentials and everyone's purchase history.
+  opt-in per fetch (`include=raw`), ride the same row as the record so the
+  same ack purges them, and are withheld from the catalogue entirely in
+  production. Neither service may become the honeypot holding both retail
+  credentials and everyone's purchase history.
 - **No CAPTCHA solving, no fingerprint spoofing, no proxy rotation to
   evade a block.** A challenge is relayed to the human who owns the
   account — that is what acting as a user's agent means. Solving it is

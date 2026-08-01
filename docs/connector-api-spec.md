@@ -366,6 +366,11 @@ a sealed password surviving a browser restart is what this custody model exists
 to avoid. On native, the platform's encrypted store — Keychain, Keystore,
 SQLCipher. The demo client does not implement this flow.
 
+**Not offered in production.** The catalogue withholds the value there, so
+`include` simply does not list `raw` and a request asking for it is refused as
+an unaccepted enum value. Diagnosing a shape change is what a development
+deployment is for.
+
 **What it costs, said plainly.** A password re-submitted by machine on a
 schedule is one that can be wrong with nobody watching, and this platform never
 retries a submitted credential precisely because that is how accounts get
