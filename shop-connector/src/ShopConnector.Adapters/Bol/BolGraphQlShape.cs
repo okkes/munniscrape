@@ -50,6 +50,18 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
     }
 
     /// <summary>
+    /// The operation, named again in a header. bol's edge rejects the request
+    /// with a 400 before GraphQL sees it when this is missing, which is exactly
+    /// how this adapter's first live run failed.
+    /// </summary>
+    public IReadOnlyList<KeyValuePair<string, string>> Headers(BolOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return [new KeyValuePair<string, string>(options.OperationNameHeader, options.OrdersOperationName)];
+    }
+
+    /// <summary>
     /// The cursor is an offset counted in orders, as a string, exactly as bol
     /// sends it: page one asks for <c>"0"</c>, page two for <c>"5"</c>.
     /// </summary>
@@ -89,9 +101,26 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
         // arrives here, not as a status code.
         Refuse(root);
 
-        if (!root.TryGetProperty("data", out var data)
-            || !data.TryGetProperty("me", out var me)
-            || !me.TryGetProperty("orders", out var orders))
+        if (!root.TryGetProperty("data", out var data) || !data.TryGetProperty("me", out var me))
+        {
+            throw ConnectorException.ProviderChanged(
+                $"{BolAdapter.ProviderId}: the response carries no data.me.orders; {ConfigHint}");
+        }
+
+        // A signed-out request is a 200 with a valid payload that simply has no
+        // orders on it. Checked BEFORE the missing-field branch below, because
+        // the two are indistinguishable by shape alone and only one of them is
+        // a provider change - reporting an expired session as "bol rebuilt its
+        // site" sends the user nowhere and an operator hunting for nothing.
+        if (string.Equals(
+                JsonAccess.StrOf(me, "__typename"), options.AnonymousTypeName, StringComparison.Ordinal))
+        {
+            throw ConnectorException.SessionExpired(
+                $"{BolAdapter.ProviderId}: bol answered as {options.AnonymousTypeName}, so the stored session " +
+                "is no longer signed in. bol issues no refresh token, so this needs a new login.");
+        }
+
+        if (!me.TryGetProperty("orders", out var orders))
         {
             throw ConnectorException.ProviderChanged(
                 $"{BolAdapter.ProviderId}: the response carries no data.me.orders; {ConfigHint}");

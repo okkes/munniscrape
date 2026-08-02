@@ -1,3 +1,4 @@
+using System.Net;
 using Connector.Kit.Adapters;
 using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
@@ -201,6 +202,12 @@ public sealed class BolAdapter : IProviderAdapter
                           $"{ProviderId}: the stored browser session carries no cookies for " +
                           $"'{_options.OrdersHost}'");
 
+        // bol double-submits its CSRF token: the cookie above carries it and
+        // the request has to echo it in a header. Missing, the API answers
+        // "403 XSRF failed" - so its absence is worth carrying explicitly
+        // rather than discovering per request.
+        var xsrf = BolCookies.Value(ctx.Material?.StorageState, _options.OrdersHost, _options.XsrfCookieName);
+
         var shape = BolShapes.For(_options.OrdersShape);
         var zone = RetailZones.Dutch;
         var cap = Manifest.Resource(ReceiptsResource)!.MaxRecordsPerFetch;
@@ -221,7 +228,7 @@ public sealed class BolAdapter : IProviderAdapter
         {
             ct.ThrowIfCancellationRequested();
 
-            var body = await ReadPageAsync(ctx, shape, cookies, page, ct).ConfigureAwait(false);
+            var body = await ReadPageAsync(ctx, shape, cookies, xsrf, page, ct).ConfigureAwait(false);
 
             ctx.Progress(JobStep.Parsing);
 
@@ -334,7 +341,7 @@ public sealed class BolAdapter : IProviderAdapter
     // ---- transport -----------------------------------------------------------
 
     private async Task<string> ReadPageAsync(
-        IJobContext ctx, IBolOrdersShape shape, string cookies, int page, CancellationToken ct)
+        IJobContext ctx, IBolOrdersShape shape, string cookies, string? xsrf, int page, CancellationToken ct)
     {
         var url = shape.Url(_options, page);
         var what = $"orders page {page} ({shape.Name} shape)";
@@ -353,6 +360,32 @@ public sealed class BolAdapter : IProviderAdapter
         request.Headers.TryAddWithoutValidation("Accept", shape.Accept);
         request.Headers.TryAddWithoutValidation("Accept-Language", _options.AcceptLanguage);
 
+        // What this shape needs beyond the above - for the API shape, the
+        // operation named in a header, without which bol's edge refuses the
+        // request before GraphQL ever sees it.
+        foreach (var (name, value) in shape.Headers(_options))
+        {
+            request.Headers.TryAddWithoutValidation(name, value);
+        }
+
+        // Only on a write. bol checks the double-submitted token on the API
+        // POST and not on a page GET, and a browser does the same.
+        if (payload is not null)
+        {
+            // Sending the POST without it earns "403 XSRF failed", which this
+            // adapter would report as bol blocking us - a dead end for anyone
+            // reading it. A login sets the cookie, so asking for one both names
+            // the problem and fixes it.
+            if (string.IsNullOrEmpty(xsrf))
+            {
+                throw ConnectorException.SessionExpired(
+                    $"{ProviderId}: the stored session carries no '{_options.XsrfCookieName}' cookie, and bol " +
+                    $"refuses the orders API without it echoed in '{_options.XsrfHeader}'. A fresh login sets it.");
+            }
+
+            request.Headers.TryAddWithoutValidation(_options.XsrfHeader, xsrf);
+        }
+
         // The account page is reached from the account page, which is what a
         // browser would say. Best effort: an operator who edits the start URL
         // into something unparseable should lose a header, not the fetch.
@@ -362,6 +395,8 @@ public sealed class BolAdapter : IProviderAdapter
         }
 
         using var response = await ProviderHttp.SendAsync(ctx.Http, request, ProviderId, ct).ConfigureAwait(false);
+
+        await RefuseStaleTokenAsync(response, ct).ConfigureAwait(false);
 
         // 401 is the session being over, which is a new login job. Everything
         // in BlockStatuses is bol refusing us rather than failing - and none
@@ -375,6 +410,31 @@ public sealed class BolAdapter : IProviderAdapter
 
         Guard(body, what);
         return body;
+    }
+
+    /// <summary>
+    /// The 403 that is a dead session wearing a refusal's clothes.
+    ///
+    /// bol answers a bad or missing CSRF token with 403 and the words
+    /// "XSRF failed", and 403 is otherwise how bol blocks a client. Read as a
+    /// block it marks the provider degraded and tells the user to wait; read
+    /// correctly it asks for the login that actually fixes it.
+    /// </summary>
+    private async Task RefuseStaleTokenAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.StatusCode != HttpStatusCode.Forbidden) return;
+
+        // The response is streamed, so it is buffered first: the caller reads
+        // this same body again to quote it in whatever error it raises.
+        await response.Content.LoadIntoBufferAsync(ct).ConfigureAwait(false);
+
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        if (!body.Contains(_options.XsrfFailureMarker, StringComparison.OrdinalIgnoreCase)) return;
+
+        throw ConnectorException.SessionExpired(
+            $"{ProviderId}: bol refused the orders API with '{_options.XsrfFailureMarker}', so the stored " +
+            "CSRF token no longer matches the session. A new login mints both together.");
     }
 
     /// <summary>

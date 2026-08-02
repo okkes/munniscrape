@@ -33,6 +33,24 @@ internal static class BolCookies
         return pairs.Count == 0 ? null : string.Join("; ", pairs.Select(p => $"{p.Key}={p.Value}"));
     }
 
+    /// <summary>
+    /// One named cookie's value, or null when the session does not carry it.
+    /// </summary>
+    /// <remarks>
+    /// bol double-submits its CSRF token - the value sits in a cookie and has
+    /// to be echoed in a header - so one cookie genuinely needs reading on its
+    /// own rather than only as part of the jar.
+    /// </remarks>
+    public static string? Value(string? storageState, string host, string name)
+    {
+        foreach (var pair in For(storageState, host))
+        {
+            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)) return pair.Value;
+        }
+
+        return null;
+    }
+
     /// <summary>Every cookie a browser would send to <paramref name="host"/>.</summary>
     public static IReadOnlyList<KeyValuePair<string, string>> For(string? storageState, string host)
     {

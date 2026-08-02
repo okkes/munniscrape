@@ -6,6 +6,8 @@
     "is scoped to login.bol.com and would not travel to www.bol.com, exactly as a",
     "browser would refuse to send it. Anything the fetch needs has to be scoped to",
     "www.bol.com or to a dotted .bol.com, and BolCookies is written to agree.",
+    "XSRF-TOKEN is confirmed too - bol sets it on any page visit, signed in or not,",
+    "and the orders API refuses a POST that does not echo it back in a header.",
     "The values are obviously fake and no real session is stored anywhere."
   ],
   "cookies": [
@@ -26,6 +28,16 @@
       "path": "/",
       "expires": -1,
       "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "XSRF-TOKEN",
+      "value": "fixture-xsrf-token",
+      "domain": ".bol.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
       "secure": true,
       "sameSite": "Lax"
     },

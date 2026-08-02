@@ -317,6 +317,55 @@ public sealed record BolOptions
     public MoneyUnit GraphQlAmountUnit { get; init; } = MoneyUnit.MajorDecimal;
 
     /// <summary>
+    /// CONFIRMED, and the header without which nothing else matters.
+    ///
+    /// bol's edge requires the operation to be named in a HEADER as well as in
+    /// the body, and refuses the request before GraphQL ever sees it when it is
+    /// missing:
+    /// <code>
+    /// HTTP 400 {"code":"InvalidRequest","message":"Request is invalid", ...}
+    /// </code>
+    /// Adding it alone turns that same request into a 200. Verified against
+    /// three different operations, signed out, so it is a property of the
+    /// endpoint rather than of any one account.
+    /// </summary>
+    public string OperationNameHeader { get; init; } = "bol-app-operation-name";
+
+    /// <summary>
+    /// CONFIRMED. bol double-submits its CSRF token: the value is in the
+    /// <c>XSRF-TOKEN</c> cookie and has to be echoed in this header. Without
+    /// it the endpoint answers <c>403 XSRF failed</c> - which is a distinct
+    /// failure from the one above and was reached only after fixing it.
+    /// </summary>
+    public string XsrfHeader { get; init; } = "x-xsrf-token";
+
+    /// <summary>The cookie the value above is read from.</summary>
+    public string XsrfCookieName { get; init; } = "XSRF-TOKEN";
+
+    /// <summary>
+    /// CONFIRMED. What bol puts in the body of the 403 when the token is wrong
+    /// or missing - the literal text <c>XSRF failed</c>.
+    ///
+    /// 403 is otherwise in <see cref="BlockStatuses"/>, so without this the
+    /// answer reads as bol refusing us: the provider goes degraded and the user
+    /// is told to wait for something that will never clear on its own. It is a
+    /// session that needs renewing, and saying so is the difference between a
+    /// dead end and a sign-in button.
+    /// </summary>
+    public string XsrfFailureMarker { get; init; } = "XSRF failed";
+
+    /// <summary>
+    /// CONFIRMED. What <c>data.me.__typename</c> says once the session is over.
+    ///
+    /// bol answers a signed-out request with <c>200</c> and a perfectly valid
+    /// payload that simply has no <c>orders</c> field. Without this, the parser
+    /// reads a missing field and reports <c>provider_changed</c> - telling the
+    /// user bol has been rebuilt when all that happened is that their session
+    /// expired, and sending an operator to look for a change that never was.
+    /// </summary>
+    public string AnonymousTypeName { get; init; } = "AnonymousCustomer";
+
+    /// <summary>
     /// CONFIRMED path, UNCONFIRMED pagination. The account app is bol's
     /// "runway" (<c>rnwy</c>) front end and the path was observed directly;
     /// <c>page</c> is a guess, and research question 4 - "does order history

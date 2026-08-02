@@ -67,6 +67,16 @@ internal interface IBolOrdersShape
     string? Body(BolOptions options, int page) => null;
 
     /// <summary>
+    /// Headers this shape needs beyond the ones every bol request carries.
+    /// </summary>
+    /// <remarks>
+    /// Kept on the shape rather than in the adapter because it is the shape
+    /// that knows what it is asking for: bol's edge wants the GraphQL operation
+    /// named in a header, and the two page shapes have no operation to name.
+    /// </remarks>
+    IReadOnlyList<KeyValuePair<string, string>> Headers(BolOptions options) => [];
+
+    /// <summary>
     /// True where this shape's orders carry no stated total and the one on the
     /// receipt is therefore our own sum of its lines.
     /// </summary>

@@ -56,6 +56,25 @@ public sealed class BolGraphQlShapeTests
     }
 
     /// <summary>
+    /// bol wants the operation named in a header as well as in the body. This
+    /// is the single thing that made the difference between a 400 and a 200
+    /// against the live endpoint, and nothing in the payload hints at it.
+    /// </summary>
+    [Fact]
+    public void The_operation_is_named_again_in_a_header()
+    {
+        var header = Assert.Single(Shape.Headers(Options));
+
+        Assert.Equal("bol-app-operation-name", header.Key);
+        Assert.Equal("OrdersOverviewClient", header.Value);
+
+        // One setting moves both, so an operator who repoints the operation
+        // cannot leave the header naming the old one.
+        var renamed = Options with { OrdersOperationName = "OrdersOverviewV2" };
+        Assert.Equal("OrdersOverviewV2", Assert.Single(Shape.Headers(renamed)).Value);
+    }
+
+    /// <summary>
     /// The cursor is an offset in ORDERS and a string, which is how bol sends
     /// it: the first click asked for "5" with five already on the page.
     /// </summary>
@@ -164,6 +183,40 @@ public sealed class BolGraphQlShapeTests
     public void An_empty_history_is_an_answer_and_not_a_shape_change(string body)
     {
         Assert.Empty(Shape.Parse(body, Options, Zone));
+    }
+
+    /// <summary>
+    /// The signed-out answer, and it is a 200 with a perfectly valid payload
+    /// that simply has no orders on it - confirmed against the live endpoint.
+    ///
+    /// Shape-wise it is indistinguishable from bol having removed the field,
+    /// and the two call for opposite responses: one asks the user to sign in
+    /// again, the other pages an operator about a change that never happened.
+    /// The typename is what separates them.
+    /// </summary>
+    [Fact]
+    public void A_signed_out_answer_asks_for_a_login_rather_than_reporting_a_change()
+    {
+        const string anonymous = """{"data":{"me":{"__typename":"AnonymousCustomer"}}}""";
+
+        var error = Assert.Throws<ConnectorException>(() => Shape.Parse(anonymous, Options, Zone));
+
+        Assert.Equal(ErrorCode.SessionExpired, error.Code);
+        Assert.Contains("AnonymousCustomer", error.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The same payload from a live account, which really does carry both the
+    /// typename and the orders. Without this, reading the typename could be
+    /// made to swallow a good response and nothing would notice.
+    /// </summary>
+    [Fact]
+    public void A_signed_in_answer_is_read_even_though_it_states_a_typename_too()
+    {
+        const string signedIn =
+            """{"data":{"me":{"__typename":"IdentifiedCustomer","orders":[]}}}""";
+
+        Assert.Empty(Shape.Parse(signedIn, Options, Zone));
     }
 
     [Theory]

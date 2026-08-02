@@ -67,7 +67,18 @@ var app = builder.Build();
 // index.html at /, then the rest of wwwroot. Plain HTML, CSS and ES modules -
 // no bundler, no npm, no build step. `dotnet run` is the whole toolchain.
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // No bundler means no content-hashed filenames, so a browser holding
+    // render.js from a previous build has no way to notice. Without an explicit
+    // Cache-Control, a soft reload is free to serve it from cache on heuristic
+    // freshness - and a rebuilt stack that still shows the old UI reads as a
+    // bug in the connector rather than a stale asset. Revalidating every time
+    // costs a conditional request against localhost and removes the whole
+    // question; the ETag still makes it a 304 when nothing changed.
+    OnPrepareResponse = ctx =>
+        ctx.Context.Response.Headers.CacheControl = "no-cache, must-revalidate",
+});
 
 app.MapRelayApi();
 

@@ -535,6 +535,30 @@ public sealed class BolAdapterTests
         Assert.DoesNotContain("affiliate", header, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// One named cookie, read out of the jar on its own so the CSRF token can
+    /// be echoed in a header.
+    ///
+    /// The name is matched case-insensitively, which RFC 6265 does not require
+    /// - it says names are case-sensitive. The leniency is deliberate and
+    /// matches how this file already treats <c>SessionCookieNames</c>: bol
+    /// shipping <c>Xsrf-Token</c> one day should cost a fetch nothing, and two
+    /// cookies differing only in case is not a thing that happens.
+    /// </summary>
+    [Fact]
+    public void A_single_cookie_can_be_read_by_name_whatever_its_casing()
+    {
+        var jar = FixtureCatalog.Read("bol/storage-state.json");
+
+        Assert.Equal("fixture-xsrf-token", BolCookies.Value(jar, "www.bol.com", "XSRF-TOKEN"));
+        Assert.Equal("fixture-xsrf-token", BolCookies.Value(jar, "www.bol.com", "xsrf-token"));
+
+        // Absent, and absent because it is out of scope - JSESSIONID is in the
+        // jar but belongs to login.bol.com.
+        Assert.Null(BolCookies.Value(jar, "www.bol.com", "no-such-cookie"));
+        Assert.Null(BolCookies.Value(jar, "www.bol.com", "JSESSIONID"));
+    }
+
     // ---- the fetch, and what a refusal is -----------------------------------
 
     [Fact]
@@ -596,6 +620,125 @@ public sealed class BolAdapterTests
         using var second = JsonDocument.Parse(handler.Requests[1].Body!);
         Assert.Equal("0", sent.RootElement.GetProperty("variables").GetProperty("after").GetString());
         Assert.Equal("5", second.RootElement.GetProperty("variables").GetProperty("after").GetString());
+    }
+
+    /// <summary>
+    /// The two headers bol's edge demands, and the reason the first live run of
+    /// this adapter failed.
+    ///
+    /// Both were established against the real endpoint, signed out, one header
+    /// at a time: the operation named ONLY in the body earns
+    /// <c>400 {"code":"InvalidRequest"}</c> before GraphQL sees the request at
+    /// all, and adding <c>bol-app-operation-name</c> alone turns that into a
+    /// 200. Fixing it uncovered the second: no <c>x-xsrf-token</c> and bol
+    /// answers <c>403 XSRF failed</c>. Neither is guessable from the payload,
+    /// which is why they are asserted rather than trusted.
+    /// </summary>
+    [Fact]
+    public async Task The_api_call_names_its_operation_in_a_header_and_echoes_the_xsrf_token()
+    {
+        var handler = new StubHttpHandler((_, i) => i == 0
+            ? Stub.Fixture("bol/orders-graphql.json")
+            : Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+
+        using var ctx = FetchContext(handler);
+
+        await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        var request = handler.Requests[0];
+
+        // The same operation as the body, stated twice because bol wants it twice.
+        Assert.Equal("OrdersOverviewClient", request.Header("bol-app-operation-name"));
+
+        // Double-submitted: the value comes off the cookie the login stored,
+        // so a hard-coded token here would pass while the real thing failed.
+        Assert.Equal("fixture-xsrf-token", request.Header("x-xsrf-token"));
+        Assert.Contains("XSRF-TOKEN=fixture-xsrf-token", request.Header("Cookie"), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A page GET is not a write and a browser sends no token on one. Sending
+    /// it anyway would be this adapter inventing traffic bol never sees from
+    /// its own front end.
+    /// </summary>
+    [Fact]
+    public async Task A_page_fetch_carries_neither_header_because_it_asks_no_operation()
+    {
+        var handler = new StubHttpHandler((_, _) => Html(FixtureCatalog.Read("bol/orders-page.html")));
+        using var ctx = FetchContext(handler);
+
+        await Adapter(Pages).FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Get, handler.Requests[0].Method);
+        Assert.Null(handler.Requests[0].Header("x-xsrf-token"));
+        Assert.Null(handler.Requests[0].Header("bol-app-operation-name"));
+    }
+
+    /// <summary>
+    /// Without the token bol answers 403, which this adapter reads as bol
+    /// blocking us - a dead end for whoever has to act on it. A login sets the
+    /// cookie, so session_expired both names the problem and asks for the thing
+    /// that fixes it.
+    /// </summary>
+    [Fact]
+    public async Task A_session_missing_the_xsrf_cookie_asks_for_a_login_instead_of_being_refused()
+    {
+        var jar = FixtureCatalog.Read("bol/storage-state.json")
+            .Replace("XSRF-TOKEN", "SOMETHING-ELSE", StringComparison.Ordinal);
+
+        var handler = new StubHttpHandler((_, _) => Stub.Fixture("bol/orders-graphql.json"));
+
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = new SessionMaterial { StorageState = jar },
+        };
+
+        var error = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.SessionExpired, error.Code);
+        Assert.Contains("XSRF-TOKEN", error.Detail, StringComparison.Ordinal);
+
+        // And it never went to the wire: a request that cannot succeed is not
+        // worth spending against an account bol may be scoring.
+        Assert.Empty(handler.Requests);
+    }
+
+    /// <summary>
+    /// A token that was good at login and is not any more.
+    ///
+    /// bol says so with a 403, and 403 is otherwise exactly how bol blocks a
+    /// client - so the two are told apart by the body, which names itself.
+    /// Getting this backwards marks the provider degraded and tells the user to
+    /// wait for something that will never clear without a sign-in.
+    /// </summary>
+    [Fact]
+    public async Task A_stale_csrf_token_asks_for_a_login_rather_than_reading_as_a_block()
+    {
+        var handler = new StubHttpHandler((_, _) => Stub.Json("XSRF failed", HttpStatusCode.Forbidden));
+        using var ctx = FetchContext(handler);
+
+        var error = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.SessionExpired, error.Code);
+    }
+
+    /// <summary>
+    /// And a 403 that says anything else is still bol refusing us. Without
+    /// this, every block would present as an expired session and send the user
+    /// through a sign-in that changes nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_403_that_is_not_about_the_token_is_still_a_refusal()
+    {
+        var handler = new StubHttpHandler((_, _) => Stub.Json("Access Denied", HttpStatusCode.Forbidden));
+        using var ctx = FetchContext(handler);
+
+        var error = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
     }
 
     /// <summary>
