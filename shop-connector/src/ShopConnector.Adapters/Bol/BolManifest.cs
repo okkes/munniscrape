@@ -55,7 +55,14 @@ internal static class BolManifest
         Kind = ProviderKind.Store,
         Country = "NL",
         ManifestVersion = Version,
-        Runtime = ProviderRuntime.BrowserOnce,
+        // T3, not T2. The enum defines T2 as "browser drives login once; a
+        // REFRESH TOKEN serves every fetch after", and bol issues no token at
+        // all - the cookie jar dies in about a day and the browser has to come
+        // back. That is T3's definition word for word, and it is what Jumbo
+        // declares for mechanics identical to these. An agent pool filtered by
+        // runtime would otherwise be offered bol on the strength of a promise
+        // this provider cannot keep.
+        Runtime = ProviderRuntime.BrowserInteractive,
         Agent = new AgentRequirement
         {
             Required = true,
@@ -123,7 +130,13 @@ internal static class BolManifest
             {
                 TtlSeconds = SessionTtlSeconds,
                 Refreshable = false,
-                RotatesOnUse = true,
+                // False, and it has to be said out loud because the field
+                // defaults to true. It means "every response may carry a
+                // re-issued bundle, persist the newest" - and bol issues no
+                // token of any kind, so no fetch here ever returns
+                // RefreshedMaterial. Left true, this told every consumer to
+                // watch for something that never arrives.
+                RotatesOnUse = false,
             },
             Reauth = new ReauthSpec { Cheap = false, TriggerCodes = ["session_expired"] },
         },

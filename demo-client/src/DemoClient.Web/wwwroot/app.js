@@ -280,7 +280,13 @@ function providerCard(service, manifest) {
       // Two chips, because they are two facts. The single "unattended" chip
       // read as a claim about the whole provider, so Albert Heijn and Lidl wore
       // a green one on a card whose Connect button then demanded a person.
-      badge(manifest.unattended_fetch ? 'syncs on its own' : 'sync needs a human',
+      //
+      // "sync needs a human" was the same conflation running the other way.
+      // unattended_fetch is false when the SESSION cannot be renewed without
+      // somebody - bol and Jumbo both fetch over plain HTTP with nobody
+      // present, for as long as their cookie lives, and then need a sign-in.
+      // Saying the sync needs a human describes neither half.
+      badge(manifest.unattended_fetch ? 'syncs on its own' : 'signing in needs a human',
         manifest.unattended_fetch ? 'good' : 'warn'),
       manifest.login_needs_headed_agent
         ? badge('connect at the machine', 'warn')
@@ -341,7 +347,14 @@ function sessionSummary(session) {
 function challengeBadges(challenges) {
   const list = challenges ?? [];
   if (list.length === 0) return 'nothing';
-  return list.map((type) => badge(type, 'challenge'));
+
+  // Through the copy vocabulary, like every other fact on this card. These
+  // rendered as bare `mfa_code` / `app_approval` tokens because badge()'s
+  // second argument is a CSS tone, not a vocab group - so the challenge
+  // vocabulary sat right there, complete, and unused. "May ask for: enter the
+  // code you were sent" is the whole point of shipping copy keys instead of
+  // enum names.
+  return list.map((type) => badge(sayTerm('challenge', type), 'challenge'));
 }
 
 function blockedNotice(blocked) {

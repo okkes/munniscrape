@@ -85,10 +85,13 @@ public sealed class BolAdapterTests
     {
         var manifest = Adapter().Describe();
 
-        // T2: the login is a JavaScript page with a reCAPTCHA site key in its
-        // config blob, so it happens in a browser - and what comes out is an
-        // ordinary cookie jar, so every fetch after that is plain HTTP.
-        Assert.Equal(ProviderRuntime.BrowserOnce, manifest.Runtime);
+        // T3, not T2. The login is a JavaScript page with a reCAPTCHA site key
+        // in its config blob, so it happens in a browser - and what comes out
+        // is an ordinary cookie jar, so every fetch after that is plain HTTP.
+        // But T2 is defined as "a refresh token serves every fetch after", and
+        // bol issues no token: the jar dies in a day and the browser has to
+        // come back, which is T3. Jumbo declares T3 for identical mechanics.
+        Assert.Equal(ProviderRuntime.BrowserInteractive, manifest.Runtime);
         Assert.True(manifest.Agent.Required);
         Assert.Equal(AgentClass.Pooled, manifest.Agent.Class);
         Assert.NotNull(manifest.Agent.Egress);
@@ -109,6 +112,14 @@ public sealed class BolAdapterTests
         Assert.False(manifest.UnattendedFetch);
         Assert.False(manifest.Auth.Session.Refreshable);
         Assert.False(manifest.Auth.Reauth.Cheap);
+
+        // The field defaults to TRUE, so this one has to be asserted or a
+        // manifest that simply never mentions it goes on telling consumers to
+        // "persist the bundle from every response" - for a provider that never
+        // re-issues one, because bol hands out no token at all.
+        Assert.False(
+            manifest.Auth.Session.RotatesOnUse,
+            "no fetch returns RefreshedMaterial, so nothing is ever re-issued");
         Assert.Equal(new[] { "session_expired" }, manifest.Auth.Reauth.TriggerCodes);
 
         // A day, and honestly a guess: nobody outside bol knows the session's

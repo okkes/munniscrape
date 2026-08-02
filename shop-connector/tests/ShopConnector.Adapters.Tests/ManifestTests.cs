@@ -162,7 +162,14 @@ public sealed class ManifestTests
         // so there is a refresh path and we are not on it.
         Assert.Equal(86_400, session.TtlSeconds);
         Assert.False(session.Refreshable, "the web client never holds a refresh token; the backend keeps it");
-        Assert.True(session.RotatesOnUse);
+
+        // False, and this assertion used to say the opposite. The field means
+        // "every response may carry a re-issued bundle, so persist the newest"
+        // - and this adapter's own FetchAsync says nothing rotates, because
+        // there is no token in our hands to re-issue. It defaults to true, so
+        // the wrong value cost nothing to write and this test then held it in
+        // place.
+        Assert.False(session.RotatesOnUse, "nothing is ever re-issued, so a consumer must not watch for it");
     }
 
     [Fact]
@@ -187,12 +194,22 @@ public sealed class ManifestTests
         // them in; supply nothing and the page is streamed from the start.
         Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
 
-        // One challenge, because there is only one thing worth raising: the
-        // page itself. A real connect met Auth0's auth0_v2 captcha -
-        // Cloudflare Turnstile - whose token is minted by its own JavaScript in
-        // the browser that rendered it, so there is nothing to photograph out
-        // and nothing to tap back. The browser goes to the human instead.
-        Assert.Equal([ChallengeType.LiveView], manifest.Auth.Challenges);
+        // LiveView is the wall's answer: a real connect met Auth0's auth0_v2
+        // captcha - Cloudflare Turnstile - whose token is minted by its own
+        // JavaScript in the browser that rendered it, so there is nothing to
+        // photograph out and nothing to tap back. The browser goes to the
+        // human instead.
+        //
+        // The other three are the TYPED path, which this provider ships on
+        // purpose - it offers a credential store so that most days nobody is
+        // disturbed. On an unwalled day the adapter fills the form and can
+        // then meet a code, a picture captcha, or a widget that only shows up
+        // after the submit. This test used to assert LiveView alone, which
+        // held in place a manifest declaring one challenge for an adapter that
+        // raises four.
+        Assert.Equal(
+            [ChallengeType.LiveView, ChallengeType.MfaCode, ChallengeType.Image, ChallengeType.AppApproval],
+            manifest.Auth.Challenges);
 
         // And the wall reaches them wherever they are, so no agent has to have
         // somebody standing at it.

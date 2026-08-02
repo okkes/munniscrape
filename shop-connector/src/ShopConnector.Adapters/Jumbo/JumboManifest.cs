@@ -124,8 +124,8 @@ internal static class JumboManifest
             // strands the user at the worst possible moment, so all three are
             // declared rather than discovered.
             //
-            // Under the streamed login the list is just LiveView. The wall is
-            // the reason: Auth0 answered a real connect with
+            // LiveView is the wall's answer, and for a while it was the whole
+            // list. The wall is the reason: Auth0 answered a real connect with
             // captcha-provider="auth0_v2" - Cloudflare Turnstile - and a
             // Turnstile token is minted by the widget's own JavaScript, in the
             // browser that rendered it, against that browser's fingerprint.
@@ -133,12 +133,32 @@ internal static class JumboManifest
             // the relay this adapter had could only ever have refused it.
             // Streaming does not relay the wall, it relays the BROWSER, so the
             // human passes it in the page that raised it.
-            Challenges = [ChallengeType.LiveView],
+            //
+            // The other three are the TYPED path, which is a shipped path -
+            // this provider offers a credential store precisely so that most
+            // days nobody is disturbed. On an unwalled day the adapter fills
+            // the form and can then meet a code (AnswerCodeAsync), a picture
+            // captcha (the pre-fill check only diverts on an INTERACTIVE
+            // widget, so a picture proceeds into the relay), or a widget that
+            // only appears after the submit. Declaring one and raising four is
+            // the exact failure the comment two lines up warns about.
+            Challenges =
+            [
+                ChallengeType.LiveView,
+                ChallengeType.MfaCode,
+                ChallengeType.Image,
+                ChallengeType.AppApproval,
+            ],
             Session = new SessionSpec
             {
                 TtlSeconds = SessionTtlSeconds,
                 Refreshable = false,
-                RotatesOnUse = true,
+                // Same correction as bol, for the same reason: the field
+                // defaults to true, and this adapter's own FetchAsync says
+                // "nothing rotates - the browser never holds a refresh token".
+                // A consumer told to persist the newest bundle from every
+                // response would be watching for one that never comes.
+                RotatesOnUse = false,
             },
             Reauth = new ReauthSpec { Cheap = false, TriggerCodes = ["session_expired"] },
         },

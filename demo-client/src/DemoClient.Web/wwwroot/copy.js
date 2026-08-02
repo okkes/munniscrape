@@ -160,6 +160,10 @@ const VOCAB = {
     qr_scan: 'Scan a QR with the provider app',
     oauth_redirect: 'Sign in on the provider\'s site',
     device_persistent: 'Already signed in on your own agent',
+    // Albert Heijn's flow, and it had no entry - so its card rendered the bare
+    // token `remote_browser` in the missing-copy style, which is meant to look
+    // like a bug because it is one.
+    remote_browser: 'Sign in on the provider\'s own page, in a browser we stream to you',
   },
   runtime: {
     http: 'T1 - no browser, ever',
