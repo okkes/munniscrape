@@ -265,43 +265,64 @@ public sealed class ManifestTests
         Assert.Equal(new[] { "nl", "de", "en", "fr", "it", "es" }, language.Options);
     }
 
+    /// <summary>
+    /// Lidl is streamed, and nobody copies a URL.
+    ///
+    /// The reCAPTCHA Enterprise finding stands - it scores the BROWSER, not
+    /// the account, so an automated Chromium fails it however good the
+    /// password is. What was wrong was the conclusion drawn from it: handing
+    /// the sign-in to the user's OWN browser only works for a native shell
+    /// that can intercept com.lidlplus.app://. Everybody else met an error
+    /// page and an instruction to copy an address out of it.
+    ///
+    /// Streaming answers the scoring on its own terms - a real person drives
+    /// the page - and because the page is ours, the redirect lands here and
+    /// the code is read from it.
+    /// </summary>
     [Fact]
-    public void Lidl_hands_the_sign_in_to_the_human_and_never_sees_a_password()
+    public void Lidl_streams_its_sign_in_and_asks_nobody_to_copy_an_address()
     {
         var manifest = Registry.RequireManifest(LidlPlusAdapter.ProviderId);
 
-        // T1, and no agent. Lidl's reCAPTCHA Enterprise scores the BROWSER,
-        // not the account: a live attempt on 2026-07-28 with correct
-        // credentials and correct selectors was bounced back to the
-        // identifier screen with a generic notice. No adapter change moves a
-        // verdict about the browser, so the browser stopped being ours - the
-        // human signs in on Lidl's page in their own, and hands back a code.
-        Assert.Equal(ProviderRuntime.Http, manifest.Runtime);
-        Assert.False(manifest.Agent.Required, "the human's browser does the sign-in");
-        Assert.Equal(AuthFlow.OauthRedirect, manifest.Auth.Flow);
+        Assert.Equal(ProviderRuntime.BrowserInteractive, manifest.Runtime);
+        Assert.True(manifest.Agent.Required, "the streamed page runs on an agent's browser");
+        Assert.False(manifest.LoginNeedsHeadedAgent, "a streamed view reaches the human wherever they are");
+        Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
 
-        // The headline, and the reason this is better rather than merely
-        // different: there is no credential field at all. The password is
-        // typed into Lidl's own page and only a single-use code comes back.
-        Assert.DoesNotContain(manifest.Auth.AllFields(), f => f.Key == "password");
-        Assert.DoesNotContain(manifest.Auth.AllFields(), f => f.Key == "username");
-        Assert.DoesNotContain(manifest.Auth.AllFields(), f => f.Key == "phone");
-        Assert.DoesNotContain(manifest.Auth.AllFields(), f => f.Type == FieldType.Password);
-
-        // Only the redirect. The one-time code, any captcha and any device
-        // check now happen inside the human's own browser, where they are
-        // that browser's problem - which is exactly what makes this work.
-        Assert.Equal(new[] { ChallengeType.Redirect }, manifest.Auth.Challenges);
-
+        // Both OPTIONAL, and that is the contract the login rests on: given
+        // them the adapter types them in, given nothing it streams from the
+        // first screen. A first connect can therefore be offered to somebody
+        // who has not decided yet whether to hand over a password.
         var step = Assert.Single(manifest.Auth.Steps);
-        var redirect = Assert.Single(step.Fields);
-        Assert.Equal("redirect_url", redirect.Key);
+        Assert.Equal(2, step.Fields.Count);
 
-        // Secret because the pasted address carries a live authorization
-        // code; optional because the authorize URL does not exist until the
-        // challenge is raised, so nobody can supply it up front.
-        Assert.True(redirect.Secret, "the pasted address carries a live code");
-        Assert.False(redirect.Required);
+        var username = Assert.Single(step.Fields, f => f.Key == "username");
+        Assert.False(username.Required);
+        Assert.False(username.Secret);
+
+        var password = Assert.Single(step.Fields, f => f.Key == "password");
+        Assert.False(password.Required);
+        Assert.True(password.Secret, "an unmarked password is logged and screenshotted");
+
+        // Nothing to paste, anywhere. The field that used to carry a copied
+        // callback address is gone, and its going is the point of the change.
+        Assert.DoesNotContain(manifest.Auth.AllFields(), f => f.Key == "redirect_url");
+        Assert.DoesNotContain(manifest.Auth.Challenges, c => c == ChallengeType.Redirect);
+
+        // LiveView answers the wall; the other three are the typed path, which
+        // is a shipped path and can meet a code, a picture or a widget.
+        Assert.Equal(
+            new[]
+            {
+                ChallengeType.LiveView, ChallengeType.MfaCode,
+                ChallengeType.Image, ChallengeType.AppApproval,
+            },
+            manifest.Auth.Challenges);
+
+        // No credential store, and the validator refuses one here: the refresh
+        // token below is what stops the human being asked again, so holding a
+        // password beside it would buy nothing and risk something.
+        Assert.False(manifest.OffersCredentialStore);
 
         // Unchanged: country and language are still needed on every ticket
         // URL and header, and they are neither secret nor a challenge.

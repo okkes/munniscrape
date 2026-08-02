@@ -78,18 +78,6 @@ public sealed record LidlPlusOptions
     public int CodeLength { get; init; } = 6;
 
     /// <summary>
-    /// Let the HUMAN's browser do the sign-in and hand back the code, instead
-    /// of driving one here. On by default, because the alternative is proven
-    /// not to work: Lidl's reCAPTCHA Enterprise scores an automated browser
-    /// and refuses it regardless of the credentials.
-    ///
-    /// Turning this off restores the Playwright path, which is kept only so
-    /// the difference stays testable and so a future Lidl that stops scoring
-    /// can be served without a release.
-    /// </summary>
-    public bool ClientSideAuthorization { get; init; } = true;
-
-    /// <summary>
     /// How long the human has to finish signing in. Generous on purpose: this
     /// is somebody switching to a browser, possibly finding a password
     /// manager, possibly getting a text. The job's own budget stops counting
@@ -119,6 +107,16 @@ public sealed record LidlPlusOptions
 
     /// <summary>How long each pass waits on the redirect before looking at the page again.</summary>
     public int RedirectPollSeconds { get; init; } = 5;
+
+    /// <summary>
+    /// How long a streamed sign-in may stay open.
+    ///
+    /// Far longer than the typed path's patience, and deliberately: somebody
+    /// is reading a real page, may be waiting on a text message, and may be
+    /// doing it one-handed on a phone. The job budget stops counting while
+    /// parked on the challenge, so this is generosity rather than latency.
+    /// </summary>
+    public int LiveLoginSeconds { get; init; } = 600;
 
     /// <summary>How long the human has to answer a relayed image captcha.</summary>
     public int ChallengeSeconds { get; init; } = 300;

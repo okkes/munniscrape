@@ -206,7 +206,7 @@ public sealed class LidlPlusLoginTests
     [Theory]
     [InlineData(Email, "e-mail field")]
     [InlineData(Phone, "phone field")]
-    public async Task The_expected_input_missing_is_a_shape_change_and_never_a_fallback(
+    public async Task The_expected_input_missing_hands_over_rather_than_typing_into_the_other_box(
         string username, string expected)
     {
         // The page has the other box, the password box and the button - so a
@@ -215,21 +215,32 @@ public sealed class LidlPlusLoginTests
         var page = StubLoginPage.Showing(other, PasswordInput, Submit, PasswordSubmit);
 
         var handler = new StubHttpHandler(Route);
-        using var ctx = Context(handler, username);
 
-        var error = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None));
+        using var ctx = new FakeJobContext(handler)
+        {
+            Config = DutchConfig,
+            Inputs = Credentials(username),
+            AnswersNothing = true,
+        };
 
-        // Named, so the next breakage arrives already diagnosed.
-        Assert.Equal(ErrorCode.ProviderChanged, error.Code);
-        Assert.Contains(expected, error.Detail, StringComparison.Ordinal);
+        await Adapter().LoginAsync(ctx, page, Arrives(afterWaits: 1), CancellationToken.None);
 
-        // Nothing was typed anywhere. Putting an address into the phone box
-        // spends a login attempt that is never retried and tells the user
-        // their credentials are wrong when they are not.
+        // Still never the other box. Putting an address into the phone input
+        // spends a login attempt against a page that is scoring us, for a
+        // reason the user cannot act on.
         Assert.Empty(page.Filled);
-        Assert.False(ctx.CredentialWasSubmitted);
-        Assert.Empty(handler.Requests);
+
+        // And it is no longer fatal. The box we know is missing - Lidl may
+        // have moved its markup, and that used to end the connect attempt
+        // outright. The human can still sign in on the page in front of them,
+        // so the login is handed over instead of refused.
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
+        Assert.True(ctx.CredentialWasSubmitted);
+
+        // The exchange still happened, so a shape change costs a hand-over
+        // rather than the connection.
+        Assert.NotEmpty(handler.Requests);
+        _ = expected;
     }
 
     [Theory]
@@ -248,7 +259,7 @@ public sealed class LidlPlusLoginTests
     [Theory]
     [InlineData("username")]
     [InlineData("password")]
-    public async Task A_login_missing_a_credential_is_refused_before_the_page_is_touched(string missing)
+    public async Task A_login_with_no_credentials_streams_the_page_instead_of_refusing(string missing)
     {
         var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -264,15 +275,24 @@ public sealed class LidlPlusLoginTests
         {
             Config = DutchConfig,
             Inputs = inputs,
+            AnswersNothing = true,
         };
 
-        var error = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None));
+        await Adapter().LoginAsync(ctx, page, Arrives(afterWaits: 1), CancellationToken.None);
 
-        Assert.Equal(ErrorCode.InvalidRequest, error.Code);
-        Assert.False(ctx.CredentialWasSubmitted);
-        Assert.Empty(page.Visited);
-        Assert.Empty(handler.Requests);
+        // Both fields are optional now, and half a credential is the same
+        // answer as none: there is nothing this adapter can usefully type, so
+        // the person whose account it is drives the page.
+        //
+        // Refusing was the old contract, and it made a first connect
+        // impossible to offer to anyone unwilling to hand over a password up
+        // front.
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
+
+        // Nothing typed, and in particular no half-credential posted at a page
+        // that scores us.
+        Assert.Empty(page.Filled);
+        Assert.True(ctx.CredentialWasSubmitted);
     }
 
     // ---- the code, and which way it arrived --------------------------------
@@ -362,10 +382,58 @@ public sealed class LidlPlusLoginTests
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
+    /// <summary>
+    /// The branch the live attempt of 2026-07-28 died in.
+    ///
+    /// reCAPTCHA's verdict does not arrive as a widget you can detect - the
+    /// page bounces back to the identifier screen with a generic notice, which
+    /// from here is indistinguishable from Lidl having moved its markup. Both
+    /// used to end the connect attempt outright. Both are now answered the
+    /// same way, because both have the same remedy: give the page to the
+    /// person whose account it is.
+    /// </summary>
+    [Fact]
+    public async Task A_typed_login_that_fails_hands_over_instead_of_ending_the_connect()
+    {
+        // The identifier box is there and the password box is not, on either
+        // screen - so the fill succeeds, the wall check finds nothing, and
+        // SignInAsync throws provider_changed part-way in.
+        var page = StubLoginPage.Showing(EmailInput, Submit);
+
+        var handler = new StubHttpHandler(Route);
+
+        using var ctx = new FakeJobContext(handler)
+        {
+            Config = DutchConfig,
+            Inputs = Credentials(Email),
+            AnswersNothing = true,
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        var result = await Adapter().LoginAsync(ctx, page, Arrives(afterWaits: 1), cts.Token);
+
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
+
+        // And it still finishes: the human signed in on the streamed page and
+        // the redirect carried the code, so a shape change costs a hand-over
+        // rather than the connection.
+        Assert.Equal("lidl-access-token-fixture", result.Material.AccessToken);
+        Assert.False(page.HoldsSecret);
+    }
+
     // ---- the wall, if Lidl ever puts one up --------------------------------
 
+    /// <summary>
+    /// The wall is the reason this provider is streamed at all.
+    ///
+    /// reCAPTCHA Enterprise scores the BROWSER, not the account, so an
+    /// automated Chromium fails it however good the password is - proven live
+    /// on 2026-07-28. There is no picture to relay and no token to carry back;
+    /// the only browser that passes is one a real person is driving.
+    /// </summary>
     [Fact]
-    public async Task An_unattended_interactive_captcha_is_refused_at_once_and_nobody_is_asked()
+    public async Task An_interactive_captcha_hands_the_page_over_rather_than_refusing()
     {
         // No code box, because the widget is standing where it would be.
         var page = StubLoginPage.Showing(
@@ -376,30 +444,30 @@ public sealed class LidlPlusLoginTests
             Config = DutchConfig,
             Inputs = Credentials(Email),
             Browser = new StubBrowserLease(page),
+            AnswersNothing = true,
         };
 
-        var watcher = new StubRedirectWaiter(redirect: null, afterWaits: 0);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        var error = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().LoginAsync(ctx, page, watcher, CancellationToken.None));
+        var result = await Adapter().LoginAsync(
+            ctx, page, new StubRedirectWaiter(Redirect, afterWaits: 1), cts.Token);
 
-        // Blocked, not internal and not invalid_credentials: nothing is wrong
-        // with the password. There is simply nobody at this browser.
-        Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
-        Assert.Contains("unattended", error.Detail, StringComparison.Ordinal);
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
 
-        // Not one question, because there is nobody to answer it, and no
-        // waiting on a redirect that is never coming.
-        Assert.Empty(ctx.Asked);
-        Assert.Equal(0, watcher.Waits);
-
-        // The password is off the page even though nothing photographed it:
-        // the runner may capture an artifact on the way out of a failed job.
+        // The identifier went in - it is not a secret and it is the half a
+        // person would otherwise have to go and look up. The PASSWORD did not:
+        // the wall is checked before it touches the DOM, because the redactor
+        // refuses to photograph a page holding a secret and a live view of
+        // nothing helps nobody.
+        Assert.Equal(Email, page.Filled[EmailInput]);
+        Assert.DoesNotContain(PasswordInput, page.Filled.Keys);
         Assert.False(page.HoldsSecret);
+
+        Assert.Equal("lidl-access-token-fixture", result.Material.AccessToken);
     }
 
     [Fact]
-    public async Task An_attended_interactive_captcha_asks_the_human_and_waits_for_the_redirect()
+    public async Task The_streamed_view_ends_on_the_redirect_and_not_on_an_answer()
     {
         var page = StubLoginPage.Showing(
             EmailInput, PasswordInput, Submit, PasswordSubmit, Options.InteractiveCaptchaSelectors[0]);
@@ -422,9 +490,11 @@ public sealed class LidlPlusLoginTests
 
         var challenge = Assert.Single(ctx.Asked);
 
-        // Passive: there is nothing to type back, because the widget hands
-        // its token to Lidl and not to us.
-        Assert.Equal(ChallengeType.AppApproval, challenge.Type);
+        // Passive: there is nothing to type back. What ends this is the
+        // browser reaching Lidl's callback, which is the same terminal signal
+        // the typed path settles on - so somebody who signs in and never
+        // returns to the consumer's UI still finishes.
+        Assert.Equal(ChallengeType.LiveView, challenge.Type);
         Assert.True(challenge.IsPassive);
         Assert.Null(challenge.Image);
 

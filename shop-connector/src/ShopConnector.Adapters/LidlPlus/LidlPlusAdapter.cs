@@ -65,34 +65,19 @@ public sealed class LidlPlusAdapter : IProviderAdapter
     {
         ArgumentNullException.ThrowIfNull(ctx);
 
-        var settings = LidlSettings.From(ctx.Config, ctx.Material);
-
-        // The default, and on Lidl the only one that works: the HUMAN's own
-        // browser performs the sign-in and hands back the authorization code.
+        // One path now, and it is a browser.
         //
-        // Lidl scores the browser with reCAPTCHA Enterprise and refuses an
-        // automated one - proven live on 2026-07-28, with correct credentials
-        // and correct selectors, bouncing back to the identifier screen with a
-        // generic notice. That verdict is about the browser, not the account,
-        // so no amount of adapter work moves it. A real device passes it
-        // because it IS a real device.
+        // The reCAPTCHA Enterprise finding stands - it scores the browser and
+        // an automated Chromium fails it - but the answer that was drawn from
+        // it, handing the sign-in to the user's own browser and asking them to
+        // paste the callback address back, only works for a native shell that
+        // can intercept com.lidlplus.app://. Everyone else met an error page
+        // and an instruction to copy a URL out of it.
         //
-        // Three things fall out, and each is worth having on its own:
-        // the connector never sees the password; no agent and no browser are
-        // needed on our side at all; and it works on a phone, where a headed
-        // Chromium on some server is no use to anybody.
-        if (_options.ClientSideAuthorization)
-        {
-            return await ClientAuthorizeAsync(ctx, settings, ct).ConfigureAwait(false);
-        }
-
-        // Everything that can fail without contacting anyone, checked before a
-        // browser is leased. Launching Chromium to discover that a required
-        // field is blank holds an agent for nothing; the overload below checks
-        // again because it is the entry point the offline suite drives.
-        _ = RequiredInput(ctx, "username");
-        _ = RequiredInput(ctx, "password");
-
+        // Streaming answers the scoring on its own terms: a real person drives
+        // the page, so what reCAPTCHA scores is a real person. And because the
+        // page is OURS, the redirect lands here and the code is read from it -
+        // nobody copies anything.
         ctx.Progress(JobStep.OpeningProvider);
         var page = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
 
@@ -119,8 +104,12 @@ public sealed class LidlPlusAdapter : IProviderAdapter
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
     {
         var settings = LidlSettings.From(ctx.Config, ctx.Material);
-        var username = RequiredInput(ctx, "username");
-        var password = RequiredInput(ctx, "password");
+
+        // Both optional, and the login is built around that. Given them, this
+        // types them in and most days nobody is disturbed; given nothing - a
+        // first connect - the same page is streamed from its first screen.
+        var username = OptionalInput(ctx, "username");
+        var password = OptionalInput(ctx, "password");
 
         // Minted before the authorize call and kept until the exchange. The
         // two halves travel apart - the challenge in a URL the browser opens,
@@ -131,7 +120,8 @@ public sealed class LidlPlusAdapter : IProviderAdapter
 
         await page.GotoAsync(AuthorizeUrl(pkce, settings), ct).ConfigureAwait(false);
 
-        var redirect = await SignInAsync(ctx, page, watcher, username, password, ct).ConfigureAwait(false);
+        var redirect = await ReachRedirectAsync(ctx, page, watcher, username, password, ct)
+            .ConfigureAwait(false);
 
         var code = AuthorizationCode(redirect);
         var tokens = await ExchangeAsync(ctx, code, pkce.Verifier, ct).ConfigureAwait(false);
@@ -158,71 +148,6 @@ public sealed class LidlPlusAdapter : IProviderAdapter
         };
     }
 
-    /// <summary>
-    /// The sign-in, performed by the human in their own browser.
-    ///
-    /// The PKCE verifier lives in this stack frame for the whole exchange, and
-    /// that is the entire state management: <see cref="IJobContext.AskAsync"/>
-    /// parks the job until the answer arrives, so there is nothing to persist
-    /// between raising the challenge and redeeming the code. The job budget
-    /// stops counting while parked, so a human who takes five minutes is not
-    /// racing a timeout.
-    /// </summary>
-    private async Task<LoginResult> ClientAuthorizeAsync(
-        IJobContext ctx, LidlSettings settings, CancellationToken ct)
-    {
-        ctx.Progress(JobStep.AwaitingHuman);
-
-        var pkce = PkceChallenge.Create();
-
-        var answer = await ctx.AskAsync(
-            new Challenge
-            {
-                Type = ChallengeType.Redirect,
-                PromptKey = MessageKeys.SignInOnProviderSite,
-                Url = AuthorizeUrl(pkce, settings),
-
-                // What the consumer watches for. A native shell intercepts this
-                // in its webview and the human sees nothing; a browser cannot
-                // follow a custom scheme at all, which is why the demo asks for
-                // a paste and a phone does not.
-                ReturnPattern = _options.RedirectUri + "*",
-                ExpiresAt = _time.GetUtcNow().AddSeconds(_options.ClientAuthorizationSeconds),
-            },
-            ct).ConfigureAwait(false);
-
-        var code = RedirectCode.Extract(answer.Value)
-            ?? throw ConnectorException.InvalidRequest(
-                "lidl: the returned address carries no authorization code; expected one on " +
-                $"'{_options.RedirectUri}'");
-
-        // The code has already been spent by the time anything can go wrong
-        // here, so a lost lease must not re-run this login: an authorization
-        // code is single-use and the retry would fail on a code Lidl has
-        // already burned.
-        ctx.CredentialSubmitted();
-        ctx.Progress(JobStep.Authenticating);
-
-        var tokens = await ExchangeAsync(ctx, code, pkce.Verifier, ct).ConfigureAwait(false);
-
-        ctx.Progress(JobStep.Finalizing);
-
-        return new LoginResult
-        {
-            Material = new SessionMaterial
-            {
-                AccessToken = tokens.AccessToken,
-                RefreshToken = tokens.RefreshToken,
-                AccessTokenExpiresAt = tokens.ExpiresAt,
-                Extra = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    [CountryKey] = settings.Country,
-                    [LanguageKey] = settings.Language,
-                },
-            },
-            Account = new ProviderAccount { DisplayName = Manifest.Name },
-        };
-    }
 
     public async Task<FetchResult> FetchAsync(IJobContext ctx, ResourceRequest request, CancellationToken ct)
     {
@@ -357,6 +282,13 @@ public sealed class LidlPlusAdapter : IProviderAdapter
     internal static bool LooksLikeEmail(string username) =>
         username.Contains('@', StringComparison.Ordinal);
 
+    /// <summary>
+    /// Both credentials are optional here, so absence is an answer rather than
+    /// an error: it means "stream the page from the start".
+    /// </summary>
+    private static string? OptionalInput(IJobContext ctx, string key) =>
+        ctx.Inputs.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+
     private static string RequiredInput(IJobContext ctx, string key) =>
         ctx.Inputs.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value
@@ -372,6 +304,140 @@ public sealed class LidlPlusAdapter : IProviderAdapter
     /// Types the credentials, meets whatever the page answers with, and
     /// returns the callback URL.
     /// </summary>
+    /// <summary>
+    /// Types what it was given, and hands the page to the human the moment
+    /// Lidl asks for something only they can supply.
+    ///
+    /// The order is the whole design. The identifier goes in first because it
+    /// is not a secret and it is the half somebody would otherwise have to go
+    /// and look up. Then the wall is checked - BEFORE the password touches the
+    /// DOM, because the redactor refuses to photograph a page holding a field
+    /// the manifest calls secret, so a password typed too early would stream a
+    /// live view of nothing. Only if the way is clear does the password go in.
+    ///
+    /// reCAPTCHA Enterprise is not relayable: it scores behaviour in the
+    /// browser that rendered it, so there is no picture to photograph out and
+    /// no token to carry back. Streaming does not relay the wall, it relays
+    /// the BROWSER - and a person passes it by being one.
+    /// </summary>
+    private async Task<string> ReachRedirectAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher,
+        string? username, string? password, CancellationToken ct)
+    {
+        ctx.Progress(JobStep.Authenticating);
+
+        // Nothing to type: a first connect, or a user who would rather not
+        // hand us a password at all. Straight to the streamed page.
+        if (username is null || password is null)
+        {
+            return await LiveRedirectAsync(ctx, page, watcher, ct).ConfigureAwait(false);
+        }
+
+        var identified = await FillUsernameAsync(page, username, ct).ConfigureAwait(false);
+
+        // Interactive only. A picture captcha IS relayable and the gate below
+        // already carries one well; streaming a whole page to answer one small
+        // picture would be the worse experience. What cannot be relayed is a
+        // widget that scores the browser.
+        var walled = (await _captcha.DetectAsync(page, ct).ConfigureAwait(false)).Kind
+            is CaptchaKind.Interactive;
+
+        if (!identified || walled)
+        {
+            return await LiveRedirectAsync(ctx, page, watcher, ct).ConfigureAwait(false);
+        }
+
+        try
+        {
+            return await SignInAsync(ctx, page, watcher, username, password, ct).ConfigureAwait(false);
+        }
+        catch (ConnectorException ex)
+            when (ex.Code is ErrorCode.BlockedByProvider or ErrorCode.ProviderChanged)
+        {
+            // The scoring verdict arrives as a bounce back to the identifier
+            // screen with a generic notice - indistinguishable, from here,
+            // from Lidl having moved its markup. Both are answered the same
+            // way: give the page to the person whose account it is. This is
+            // the branch the 2026-07-28 live attempt died in.
+            return await LiveRedirectAsync(ctx, page, watcher, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The streamed sign-in. Ends when the browser reaches Lidl's callback,
+    /// which is the same terminal signal the typed path settles on.
+    /// </summary>
+    private async Task<string> LiveRedirectAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
+    {
+        // Whatever route arrived here, the page must hold no secret before it
+        // is photographed. On the walled path nothing was typed; on the
+        // failure path a password may have been.
+        await page.ClearSecretsAsync(ct).ConfigureAwait(false);
+
+        // From here the account has been touched: the human is about to sign
+        // in on a real page, and a requeued login is how an account gets
+        // locked. Idempotent, so a typed path that latched already is fine.
+        ctx.CredentialSubmitted();
+
+        ctx.Progress(JobStep.AwaitingHuman);
+
+        // Raised and awaited on its own: the answer to a live view is the
+        // empty one every passive challenge sends, and what actually ends this
+        // is the redirect. Whichever comes first wins, so somebody who signs
+        // in without touching the consumer's UI again still finishes. Linked
+        // so the ask can be ENDED rather than merely abandoned - that is what
+        // stops the shutter and releases the browser.
+        using var view = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var asked = ctx.AskAsync(new Challenge
+        {
+            Type = ChallengeType.LiveView,
+            PromptKey = MessageKeys.LiveLogin,
+            ExpiresAt = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds),
+        }, view.Token);
+
+        var poll = TimeSpan.FromSeconds(_options.RedirectPollSeconds);
+        var deadline = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds);
+
+        try
+        {
+            while (_time.GetUtcNow() < deadline)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is { } captured)
+                {
+                    ctx.Progress(JobStep.Finalizing);
+                    return captured;
+                }
+
+                if (asked.IsCompleted) break;
+            }
+
+            throw ConnectorException.Blocked(
+                $"{ProviderId}: the live login ended without reaching '{_options.RedirectUri}'; " +
+                "the sign-in was not completed");
+        }
+        finally
+        {
+            await view.CancelAsync().ConfigureAwait(false);
+            _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+        }
+    }
+
+    /// <summary>
+    /// Lidl offers two identifier boxes and the '@' decides which. Never the
+    /// other one on a miss: typing an address into the phone input spends a
+    /// real attempt against a defended page for a reason nobody can act on.
+    /// </summary>
+    private async Task<bool> FillUsernameAsync(ILoginPage page, string username, CancellationToken ct)
+    {
+        var selectors = LooksLikeEmail(username) ? _options.EmailSelectors : _options.PhoneSelectors;
+
+        return await page.FillAsync(selectors, username, _options.SelectorTimeoutMs, ct).ConfigureAwait(false);
+    }
+
     private async Task<string> SignInAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher,
         string username, string password, CancellationToken ct)
