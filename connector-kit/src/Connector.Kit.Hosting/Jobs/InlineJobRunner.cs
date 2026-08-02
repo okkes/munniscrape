@@ -124,6 +124,7 @@ public sealed class InlineJobRunner(
                     Accounts = fetch.Accounts,
                     Transactions = fetch.Transactions,
                     Receipts = fetch.Receipts,
+                    Registrations = fetch.Registrations,
                     SessionMaterial = fetch.RefreshedMaterial,
                     Complete = fetch.Complete,
                     Via = fetch.Via,

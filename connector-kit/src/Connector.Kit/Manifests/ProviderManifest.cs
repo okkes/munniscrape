@@ -138,6 +138,19 @@ public enum ProviderKind
 {
     Bank,
     Store,
+
+    /// <summary>
+    /// A registry: somewhere that holds an official record ABOUT you rather
+    /// than a stream of things you did.
+    ///
+    /// Bank and store are both event feeds - transactions, receipts - and a
+    /// registry is not. BKR states what credit you have outstanding, right
+    /// now, as a standing position; the same is true of a pension overview or
+    /// a student-debt balance. Modelling those as another kind of transaction
+    /// would force every one of them to invent a date and an amount it does
+    /// not have.
+    /// </summary>
+    Registry,
 }
 
 /// <summary>

@@ -38,6 +38,12 @@ public enum ResourceShape
     Transaction,
     Receipt,
     Profile,
+
+    /// <summary>
+    /// One credit as a registry states it: who lent, what kind, how much, and
+    /// whether it is still running.
+    /// </summary>
+    CreditRegistration,
 }
 
 public sealed record ParamSpec

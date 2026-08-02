@@ -21,6 +21,9 @@ public static class Ids
     public const string Account = "acc";
     public const string Transaction = "txn";
     public const string Receipt = "rcp";
+
+    /// <summary>One credit as a registry states it.</summary>
+    public const string CreditRegistration = "crd";
     public const string Cursor = "cur";
     public const string Error = "err";
     public const string Event = "evt";

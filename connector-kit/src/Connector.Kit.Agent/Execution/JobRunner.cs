@@ -289,6 +289,7 @@ public sealed class JobRunner
                     Accounts = fetch.Accounts,
                     Transactions = fetch.Transactions,
                     Receipts = fetch.Receipts,
+                    Registrations = fetch.Registrations,
                     SessionMaterial = fetch.RefreshedMaterial is null
                         ? null
                         : MaterialFor(fetch.RefreshedMaterial, manifest, profileId),

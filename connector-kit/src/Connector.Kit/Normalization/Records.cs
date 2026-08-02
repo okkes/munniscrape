@@ -257,3 +257,124 @@ public sealed record ReceiptDiscount
 
     public string? Label { get; init; }
 }
+
+/// <summary>
+/// Whether a registered credit is still running.
+///
+/// Two states because the registry states two. A consumer showing "you owe
+/// this" needs to know which of these it is looking at, and inferring it from
+/// an end date that may be absent is how a settled debt reappears as a live
+/// one.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CreditStatus>))]
+public enum CreditStatus
+{
+    /// <summary>Lopend. Still outstanding.</summary>
+    Running,
+
+    /// <summary>Beeindigd. Repaid or otherwise closed.</summary>
+    Ended,
+
+    /// <summary>The registry said something this connector does not recognise.</summary>
+    Unknown,
+}
+
+/// <summary>
+/// The shape of a credit, as a registry classifies it.
+/// </summary>
+/// <remarks>
+/// Kept as an enum rather than the registry's own words because the words are
+/// Dutch and the classification is not: an instalment loan is an instalment
+/// loan in any language, and a consumer should not have to match on
+/// "Aflopend krediet" to find one.
+/// </remarks>
+[JsonConverter(typeof(JsonStringEnumConverter<CreditKind>))]
+public enum CreditKind
+{
+    /// <summary>Aflopend krediet. Fixed sum, repaid on a schedule.</summary>
+    Instalment,
+
+    /// <summary>Doorlopend krediet. A limit you may draw against repeatedly.</summary>
+    Revolving,
+
+    /// <summary>Verzendhuiskrediet and friends: pay later for goods.</summary>
+    DeferredPayment,
+
+    /// <summary>Hypotheek.</summary>
+    Mortgage,
+
+    /// <summary>Leasing.</summary>
+    Lease,
+
+    /// <summary>Registered, but under a label this connector does not map.</summary>
+    Other,
+}
+
+/// <summary>
+/// One credit exactly as a registry states it.
+///
+/// Deliberately NOT a <see cref="Transaction"/>. A registration is a standing
+/// position rather than an event: it has no moment it happened at, its amount
+/// is what is registered rather than what moved, and it can sit unchanged for
+/// years. Forcing it into the transaction shape would make every consumer
+/// invent a booking date the registry never stated.
+/// </summary>
+public sealed record CreditRegistration : NormalizedRecord
+{
+    /// <summary>
+    /// Who registered it - the lender, as the registry names them. Verbatim:
+    /// "Odido Netherlands B.V." is how the user will recognise a phone
+    /// contract they forgot was credit at all.
+    /// </summary>
+    public required string Creditor { get; init; }
+
+    public required CreditKind Kind { get; init; }
+
+    /// <summary>
+    /// The registry's own words for <see cref="Kind"/>, kept beside the mapped
+    /// value. A label this connector does not recognise still reaches the user
+    /// intact instead of arriving as "other" and nothing else.
+    /// </summary>
+    [JsonPropertyName("kind_label")]
+    public string? KindLabel { get; init; }
+
+    /// <summary>
+    /// The registered amount. For an instalment credit this is what was
+    /// borrowed, not what is left - which is the single most misread number in
+    /// a credit register, and the reason it is named plainly here.
+    /// </summary>
+    public required Money Amount { get; init; }
+
+    public required CreditStatus Status { get; init; }
+
+    /// <summary>When the credit was registered, where the registry states it.</summary>
+    [JsonPropertyName("started_on")]
+    public DateOnly? StartedOn { get; init; }
+
+    /// <summary>
+    /// When it ended, or the date it is due to. Null on a running credit that
+    /// states no end, which is normal for revolving credit.
+    /// </summary>
+    [JsonPropertyName("ends_on")]
+    public DateOnly? EndsOn { get; init; }
+
+    /// <summary>
+    /// The monthly instalment, where stated. Null rather than derived: a
+    /// number computed from a term and a total would look identical to one the
+    /// registry gave us, and only one of them is true.
+    /// </summary>
+    [JsonPropertyName("monthly_amount")]
+    public Money? MonthlyAmount { get; init; }
+
+    /// <summary>
+    /// An arrears marker, verbatim - BKR's A-codes and the like.
+    /// </summary>
+    /// <remarks>
+    /// Never interpreted here. What an A2 means for somebody's mortgage
+    /// application is not a connector's judgement to make, and a connector
+    /// that softened or summarised it would be hiding the single most
+    /// consequential thing in the record.
+    /// </remarks>
+    [JsonPropertyName("arrears_code")]
+    public string? ArrearsCode { get; init; }
+}

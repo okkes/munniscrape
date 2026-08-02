@@ -182,6 +182,17 @@ public sealed class ResultService(
             };
             yield return new StagedRecord(withIds.Id, receipt.ExternalId, hash, ConnectorJson.Serialize(withIds));
         }
+
+        foreach (var credit in result.Registrations)
+        {
+            var hash = ContentHash.Of(credit);
+            var withIds = credit with
+            {
+                Id = Ids.ForRecord(Ids.CreditRegistration, sessionId, credit.ExternalId),
+                ContentHash = hash,
+            };
+            yield return new StagedRecord(withIds.Id, credit.ExternalId, hash, ConnectorJson.Serialize(withIds));
+        }
     }
 
     private readonly record struct StagedRecord(string Id, string ExternalId, string ContentHash, string PayloadJson);

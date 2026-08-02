@@ -183,6 +183,12 @@ public sealed record FetchResult
     public IReadOnlyList<Receipt> Receipts { get; init; } = [];
 
     /// <summary>
+    /// What a registry states you owe. A standing position rather than an
+    /// event, which is why it is its own list and not a kind of transaction.
+    /// </summary>
+    public IReadOnlyList<CreditRegistration> Registrations { get; init; } = [];
+
+    /// <summary>
     /// Refreshed material when the provider rotated a token. Sealed into a
     /// new bundle the caller must persist.
     /// </summary>
@@ -212,7 +218,7 @@ public sealed record FetchResult
     public IReadOnlyDictionary<string, string> Raw { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
-    public int Count => Accounts.Count + Transactions.Count + Receipts.Count;
+    public int Count => Accounts.Count + Transactions.Count + Receipts.Count + Registrations.Count;
 
     public static FetchResult Empty { get; } = new();
 }

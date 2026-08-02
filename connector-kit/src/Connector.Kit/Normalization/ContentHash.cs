@@ -61,6 +61,30 @@ public static class ContentHash
         return Compute([.. parts]);
     }
 
+    /// <summary>
+    /// The facts a registry states about one credit.
+    ///
+    /// Status participates, unlike a receipt's reconciliation verdict: a
+    /// credit moving from running to ended is the registry saying something
+    /// new about it, not us reaching a different opinion about the same
+    /// content. A consumer must see that as a changed record.
+    /// </summary>
+    public static string Of(CreditRegistration credit)
+    {
+        ArgumentNullException.ThrowIfNull(credit);
+        return Compute(
+            credit.ExternalId,
+            credit.Creditor,
+            credit.Kind.ToString(),
+            credit.Amount.Value.ToString(CultureInfo.InvariantCulture),
+            credit.Amount.Currency,
+            credit.Status.ToString(),
+            credit.StartedOn?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
+            credit.EndsOn?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
+            credit.MonthlyAmount?.Value.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            credit.ArrearsCode ?? string.Empty);
+    }
+
     public static string Of(Account account)
     {
         ArgumentNullException.ThrowIfNull(account);

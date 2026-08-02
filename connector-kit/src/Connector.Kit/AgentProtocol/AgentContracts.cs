@@ -231,6 +231,9 @@ public sealed record JobResultRequest
 
     public IReadOnlyList<Receipt> Receipts { get; init; } = [];
 
+    /// <summary>What a registry states you owe. A standing position, not an event.</summary>
+    public IReadOnlyList<CreditRegistration> Registrations { get; init; } = [];
+
     /// <summary>Sealed by the control plane into a new bundle for the caller.</summary>
     [JsonPropertyName("session_material")]
     public SessionMaterial? SessionMaterial { get; init; }
