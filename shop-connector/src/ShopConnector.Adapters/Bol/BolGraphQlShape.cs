@@ -89,7 +89,7 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
         }.ToJsonString();
     }
 
-    public IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone)
+    public IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -140,13 +140,13 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
 
         foreach (var order in orders.EnumerateArray())
         {
-            if (Read(order, options, zone) is { } one) parsed.Add(one);
+            if (Read(order, options, zone, keepRaw) is { } one) parsed.Add(one);
         }
 
         return parsed;
     }
 
-    private static BolOrder? Read(JsonElement order, BolOptions options, TimeZoneInfo zone)
+    private static BolOrder? Read(JsonElement order, BolOptions options, TimeZoneInfo zone, bool keepRaw)
     {
         var reference = JsonAccess.StrOf(order, "reference");
 
@@ -181,6 +181,10 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
             Total = new Money(total, options.Currency),
             SellerName = seller,
             Items = items,
+
+            // The order as bol sent it, whole - which is what makes it worth
+            // having when a field moves and our reading of it stops matching.
+            Raw = keepRaw ? order.GetRawText() : null,
         };
     }
 

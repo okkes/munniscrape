@@ -44,7 +44,7 @@ internal sealed class BolJsonShape : IBolOrdersShape
             .Replace("{page}", page.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
-    public IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone)
+    public IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false)
     {
         ArgumentNullException.ThrowIfNull(body);
         ArgumentNullException.ThrowIfNull(options);

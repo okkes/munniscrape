@@ -386,10 +386,20 @@ public sealed class JumboAdapter : IProviderAdapter
         var complete = walk.Complete;
         var emitted = new HashSet<string>(StringComparer.Ordinal);
 
+        // Keyed by the external id its receipt carries, which is how a consumer
+        // pairs the two back up.
+        var raw = new Dictionary<string, string>(StringComparer.Ordinal);
+
         foreach (var order in walk.Orders)
         {
             ct.ThrowIfCancellationRequested();
-            receipts.Add(await OnlineReceiptAsync(ctx, deviceId, order, request, ct).ConfigureAwait(false));
+
+            var (receipt, document) = await OnlineReceiptAsync(ctx, deviceId, order, request, ct)
+                .ConfigureAwait(false);
+
+            receipts.Add(receipt);
+            if (document is not null) raw[receipt.ExternalId] = document;
+
             emitted.Add(order.OrderId);
         }
 
@@ -406,7 +416,9 @@ public sealed class JumboAdapter : IProviderAdapter
                 continue;
             }
 
-            var receipt = await StoreReceiptAsync(ctx, deviceId, summary, ct).ConfigureAwait(false);
+            var (receipt, document) = await StoreReceiptAsync(ctx, deviceId, summary, request.WantsRaw, ct)
+                .ConfigureAwait(false);
+
             if (receipt is null)
             {
                 // Only reachable with SkipUnreadableStoreReceipts on. The pass
@@ -417,6 +429,7 @@ public sealed class JumboAdapter : IProviderAdapter
             }
 
             receipts.Add(receipt);
+            if (document is not null) raw[receipt.ExternalId] = document;
         }
 
         ctx.Progress(JobStep.Normalizing);
@@ -430,6 +443,7 @@ public sealed class JumboAdapter : IProviderAdapter
             // holds a refresh token, so the stored bundle stays as it is until
             // it expires.
             Via = "graphql",
+            Raw = raw,
         };
     }
 
@@ -603,7 +617,7 @@ public sealed class JumboAdapter : IProviderAdapter
 
                 foreach (var row in rows)
                 {
-                    var summary = JumboOrders.ParseSummary(row, _options, zone);
+                    var summary = JumboOrders.ParseSummary(row, _options, zone, request.WantsRaw);
                     if (summary is null) continue;              // unkeyable rows cannot be deduped
                     if (!seenOrders.Add(summary.OrderId)) continue;
 
@@ -696,10 +710,16 @@ public sealed class JumboAdapter : IProviderAdapter
 
     // ---- building one receipt ---------------------------------------------
 
-    private async Task<Receipt> OnlineReceiptAsync(
+    private async Task<(Receipt Receipt, string? Raw)> OnlineReceiptAsync(
         IJobContext ctx, string? deviceId, JumboOrderSummary order, ResourceRequest request, CancellationToken ct)
     {
         var detail = new JumboOrderDetail();
+
+        // The list row, until a detail call produces something richer. Without
+        // this, asking for raw and not items would hand back nothing at all -
+        // which reads as "Jumbo sent nothing" rather than "you did not ask for
+        // the call that produces it".
+        var raw = order.Raw;
 
         if (request.WantsItems)
         {
@@ -717,24 +737,28 @@ public sealed class JumboAdapter : IProviderAdapter
 
             detail = JumboOrders.ParseDetail(
                 document.RootElement, _options, order.Total.Currency, order.OrderId);
+
+            // The detail document is the richer of the two and the one worth
+            // having when a field moves.
+            if (request.WantsRaw) raw = document.RootElement.GetRawText();
         }
 
-        return ReceiptFactory.Build(
+        return (ReceiptFactory.Build(
             ctx.SessionId,
             OrderExternalId(order.OrderId),
             JumboReceipts.Merchant(order.StoreName),
             order.PurchasedAt,
             order.Total,
             detail.Payment,
-            detail.Items);
+            detail.Items), raw);
     }
 
     /// <summary>
     /// One in-store receipt, or null when it could not be read and the
     /// operator has said to keep going anyway.
     /// </summary>
-    private async Task<Receipt?> StoreReceiptAsync(
-        IJobContext ctx, string? deviceId, JumboStoreReceiptSummary summary, CancellationToken ct)
+    private async Task<(Receipt? Receipt, string? Raw)> StoreReceiptAsync(
+        IJobContext ctx, string? deviceId, JumboStoreReceiptSummary summary, bool keepRaw, CancellationToken ct)
     {
         // Always fetched, whether or not items were asked for: the receipt
         // list states no total at all, so without this call there is nothing
@@ -751,17 +775,17 @@ public sealed class JumboAdapter : IProviderAdapter
 
         if (layout is null)
         {
-            return Unreadable(summary.TransactionId,
+            return (Unreadable(summary.TransactionId,
                 $"its receiptImage is not a '{_options.DigitalReceiptJsonType}' layout, and nothing else in " +
-                "Jumbo's API states an in-store total");
+                "Jumbo's API states an in-store total"), null);
         }
 
         var contents = _layout.Parse(layout, _options, _options.Currency);
 
         if (contents.Total is not { } total)
         {
-            return Unreadable(summary.TransactionId,
-                $"its printed layout yielded no total ({contents.Shortfall ?? "no reason given"})");
+            return (Unreadable(summary.TransactionId,
+                $"its printed layout yielded no total ({contents.Shortfall ?? "no reason given"})"), null);
         }
 
         var receipt = ReceiptFactory.Build(
@@ -773,12 +797,16 @@ public sealed class JumboAdapter : IProviderAdapter
             ReceiptFactory.Payment(contents.PaymentMethod),
             contents.Items);
 
+        // The whole digital-receipt document. This one is always fetched, so a
+        // caller asking for raw always gets one for an in-store shop.
+        var raw = keepRaw ? document.RootElement.GetRawText() : null;
+
         // A layout we could only half-read must not claim to reconcile. An
         // empty item list reconciles trivially - there is nothing to check
         // against - and letting that stand would be the parser vouching for
         // work it did not do. The content hash covers the facts and not the
         // verdict, so overriding it here leaves the hash correct.
-        return contents.Shortfall is null ? receipt : receipt with { Reconciled = false };
+        return (contents.Shortfall is null ? receipt : receipt with { Reconciled = false }, raw);
     }
 
     private Receipt? Unreadable(string transactionId, string why)

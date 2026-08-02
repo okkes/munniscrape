@@ -166,7 +166,9 @@ public sealed class BolAdapterTests
         Assert.Equal(ResourceShape.Receipt, receipts.Returns);
         Assert.True(receipts.Param("since")!.Required);
         Assert.Equal(ParamType.Date, receipts.Param("until")!.Type);
-        Assert.Equal(new[] { "items" }, receipts.Param("include")!.Values);
+        // raw as well as items, now that the orders come from an API and there
+        // is a document to hand back rather than markup we picked apart.
+        Assert.Equal(new[] { "items", "raw" }, receipts.Param("include")!.Values);
 
         // A marketplace order surfaces when the seller ships it, so a row can
         // appear days after the date it will carry. Fetching strictly since
@@ -702,6 +704,51 @@ public sealed class BolAdapterTests
         // And it never went to the wire: a request that cannot succeed is not
         // worth spending against an account bol may be scoring.
         Assert.Empty(handler.Requests);
+    }
+
+    /// <summary>
+    /// The manifest offers "raw", so a caller that asks has to get one - a
+    /// declared include that always arrives empty is worse than one never
+    /// offered, because the consumer builds a screen for it.
+    /// </summary>
+    [Fact]
+    public async Task Raw_is_the_order_exactly_as_bol_sent_it_and_only_when_asked()
+    {
+        var handler = new StubHttpHandler((_, i) => i == 0
+            ? Stub.Fixture("bol/orders-graphql.json")
+            : Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+
+        using var ctx = FetchContext(handler);
+
+        var asked = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(raw: true), CancellationToken.None);
+
+        // Keyed by the external id its receipt carries, or a consumer cannot
+        // pair the two up.
+        var document = Assert.Contains("A000TEST001", (IDictionary<string, string>)asked.Raw!);
+
+        using var parsed = JsonDocument.Parse(document);
+        Assert.Equal("A000TEST001", parsed.RootElement.GetProperty("reference").GetString());
+
+        // Verbatim, not our reading of it: the whole value of raw is that it
+        // still says what bol said when our parser stops agreeing with it.
+        Assert.True(parsed.RootElement.TryGetProperty("items", out _));
+    }
+
+    [Fact]
+    public async Task A_caller_that_did_not_ask_for_raw_is_not_handed_somebody_s_purchase()
+    {
+        var handler = new StubHttpHandler((_, i) => i == 0
+            ? Stub.Fixture("bol/orders-graphql.json")
+            : Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+
+        using var ctx = FetchContext(handler);
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(raw: false), CancellationToken.None);
+
+        Assert.NotEmpty(result.Receipts);
+        Assert.Empty(result.Raw ?? new Dictionary<string, string>(StringComparer.Ordinal));
     }
 
     /// <summary>

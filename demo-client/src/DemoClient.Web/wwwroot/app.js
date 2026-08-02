@@ -94,6 +94,36 @@ async function loadService(service) {
   state.agents.set(service.key, agents.status === 'fulfilled' ? agents.value ?? [] : []);
 }
 
+/**
+ * Re-read one service's catalogue, because provider status MOVES.
+ *
+ * A run that fails degrades a provider and a run that succeeds clears it -
+ * the card says exactly that, in those words. The document was read once at
+ * boot and never again, so the badge could only ever change on a page reload:
+ * bol.com went on reading "Degraded / a run that succeeds clears this" while
+ * the connector had already marked it healthy and was returning receipts. A
+ * promise the UI makes and then breaks is worse than showing no badge at all.
+ *
+ * Only the catalogue, not the agents beside it: agent health has its own
+ * refresh and a job settling says nothing about it.
+ */
+async function refreshCatalog(serviceKey) {
+  const service = state.services.find((s) => s.key === serviceKey);
+  if (!service?.reachable) return;
+
+  let catalog;
+  try {
+    catalog = await api.providers(serviceKey);
+  } catch {
+    // A refresh that fails leaves the previous document alone. A stale badge
+    // is a smaller lie than an empty providers tab.
+    return;
+  }
+
+  state.catalogs.set(serviceKey, catalog);
+  if (state.tab === 'providers') renderProviders();
+}
+
 function switchTab(name) {
   state.tab = name;
 
@@ -612,6 +642,11 @@ async function settle(view) {
   run.stop?.();
   run.stop = null;
 
+  // Either way round: a run that failed may have just degraded this provider
+  // and a run that succeeded may have just cleared it. Not awaited - the
+  // badge is worth a second-hand update, never a delay in front of the user.
+  refreshCatalog(run.service.key);
+
   if (view.state !== 'active') {
     // A login can fail long after the POST returned - on an agent, minutes
     // later - so the stored credential has to be dropped here too, not only
@@ -1085,17 +1120,23 @@ function renderData() {
 }
 
 async function runFetch(row, resource, params, results) {
-  const response = await api.fetchResource(row.service, row.provider, resource.id, {
-    bundle: row.bundle,
-    params,
-  });
+  try {
+    const response = await api.fetchResource(row.service, row.provider, resource.id, {
+      bundle: row.bundle,
+      params,
+    });
 
-  if (response.job_id) {
-    await followJob(row, resource, response, results);
-    return;
+    if (response.job_id) {
+      await followJob(row, resource, response, results);
+      return;
+    }
+
+    deliver(row, resource, response, results);
+  } finally {
+    // In a finally because a FAILED fetch is exactly the run that degrades a
+    // provider, and the badge that then appears is the one worth having.
+    refreshCatalog(row.service);
   }
-
-  deliver(row, resource, response, results);
 }
 
 /**

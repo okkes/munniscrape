@@ -21,6 +21,13 @@ internal sealed record JumboOrderSummary
     public required Money Total { get; init; }
 
     public string? StoreName { get; init; }
+
+    /// <summary>
+    /// This order's list row exactly as Jumbo sent it, or null when the caller
+    /// did not ask. Held only on request: it is a verbatim copy of somebody's
+    /// shopping.
+    /// </summary>
+    public string? Raw { get; init; }
 }
 
 /// <summary>
@@ -82,7 +89,8 @@ internal static class JumboOrders
     /// One order summary, or null when the row cannot be keyed and therefore
     /// cannot be deduped.
     /// </summary>
-    public static JumboOrderSummary? ParseSummary(JsonElement row, JumboOptions options, TimeZoneInfo zone)
+    public static JumboOrderSummary? ParseSummary(
+        JsonElement row, JumboOptions options, TimeZoneInfo zone, bool keepRaw = false)
     {
         var id = JsonAccess.StrOf(row, "orderId");
         if (string.IsNullOrWhiteSpace(id)) return null;
@@ -113,6 +121,7 @@ internal static class JumboOrders
                 JsonAccess.StrOf(row, "deliveryDate"), zone, ProviderId, $"order[{id}].deliveryDate"),
             Total = total,
             StoreName = JsonAccess.StrOf(row, "branchName"),
+            Raw = keepRaw ? row.GetRawText() : null,
         };
     }
 

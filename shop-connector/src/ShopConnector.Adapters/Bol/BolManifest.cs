@@ -137,7 +137,10 @@ internal static class BolManifest
                 [
                     new ParamSpec { Key = "since", Type = ParamType.Date, Required = true },
                     new ParamSpec { Key = "until", Type = ParamType.Date },
-                    new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items"], Multi = true },
+                    // "raw" hands back each order exactly as bol's API sent it.
+                    // Opt-in: it is a verbatim copy of somebody's purchase, so
+                    // a caller has to ask before the connector carries one.
+                    new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items", "raw"], Multi = true },
                 ],
                 MaxHistoryDays = 730,
                 TypicalDurationSeconds = 45,

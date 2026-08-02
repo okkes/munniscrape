@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Connector.Kit.Errors;
 using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
@@ -229,6 +230,76 @@ public sealed class JumboAdapterTests
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
         Assert.Contains("Float!", error.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The manifest offers "raw", so both kinds of purchase have to produce
+    /// one. Jumbo builds a receipt from two different documents depending on
+    /// whether the shop was online or in a store, and a raw that only covered
+    /// one of them would arrive half-empty for a normal week's shopping.
+    /// </summary>
+    [Fact]
+    public async Task Raw_covers_both_an_online_order_and_a_till_receipt()
+    {
+        var graphql = FakeJumboGraphQl.Recorded();
+        using var ctx = new FakeJobContext { Material = JumboFixtures.LiveSession };
+
+        var result = await Adapter(graphql).FetchAsync(
+            ctx, Requests.Receipts(since: Requests.Day(2026, 7, 1), raw: true), CancellationToken.None);
+
+        // Keyed by the same external id the receipts carry, or a consumer
+        // cannot pair the two back up.
+        Assert.All(result.Receipts, r =>
+            Assert.Contains(r.ExternalId, (IDictionary<string, string>)result.Raw!));
+
+        using var order = JsonDocument.Parse(result.Raw!["order-90211"]);
+        using var till = JsonDocument.Parse(result.Raw!["receipt-TX-2026-07-19-778812"]);
+
+        // The DETAIL document, not the list row it started from - `data.order`
+        // is the detail response's own envelope and the list row has no `data`
+        // at all. The detail is the richer of the two and the one worth keeping
+        // when a field moves, so which one arrives here is the point.
+        Assert.True(order.RootElement.TryGetProperty("data", out var orderData));
+        Assert.True(orderData.TryGetProperty("order", out _));
+
+        // And the whole digital-receipt document for the till record.
+        Assert.True(till.RootElement.TryGetProperty("data", out var tillData));
+        Assert.True(tillData.TryGetProperty("receipt", out _));
+    }
+
+    /// <summary>
+    /// Raw without items: there is no detail call to take a document from, so
+    /// the list row stands in. Returning nothing here would read as "Jumbo sent
+    /// nothing" rather than "you did not ask for the call that produces it" -
+    /// the same mistake Albert Heijn already made once.
+    /// </summary>
+    [Fact]
+    public async Task Raw_without_items_falls_back_to_the_list_row_rather_than_nothing()
+    {
+        var graphql = FakeJumboGraphQl.Recorded();
+        using var ctx = new FakeJobContext { Material = JumboFixtures.LiveSession };
+
+        var result = await Adapter(graphql).FetchAsync(
+            ctx,
+            Requests.Receipts(since: Requests.Day(2026, 7, 1), items: false, raw: true),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(graphql.Calls, c => c.OperationName == "OrderPagesOrder");
+
+        using var order = JsonDocument.Parse(result.Raw!["order-90211"]);
+        Assert.Equal("90211", order.RootElement.GetProperty("orderId").GetString());
+    }
+
+    [Fact]
+    public async Task A_caller_that_did_not_ask_for_raw_is_handed_none()
+    {
+        var graphql = FakeJumboGraphQl.Recorded();
+        using var ctx = new FakeJobContext { Material = JumboFixtures.LiveSession };
+
+        var result = await Adapter(graphql).FetchAsync(ctx, SinceJuly, CancellationToken.None);
+
+        Assert.NotEmpty(result.Receipts);
+        Assert.Empty(result.Raw ?? new Dictionary<string, string>(StringComparer.Ordinal));
     }
 
     [Fact]

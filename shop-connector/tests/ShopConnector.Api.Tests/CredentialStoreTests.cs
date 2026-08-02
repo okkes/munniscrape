@@ -101,6 +101,45 @@ public sealed class CredentialStoreTests(ShopApiFactory factory)
             "a credential bundle must never be delivered twice");
     }
 
+    /// <summary>
+    /// Disconnect means forget, and it has to cover a bundle nobody collected.
+    ///
+    /// A credential bundle is cleared when it is handed over - so a login whose
+    /// bundle was never fetched keeps it on the row. Every other secret is
+    /// dropped by a purge; this one was not, which made the single action a
+    /// user takes to be rid of a connection the one that left their sealed
+    /// password behind.
+    /// </summary>
+    [Fact]
+    public async Task Disconnecting_forgets_a_credential_bundle_nobody_collected()
+    {
+        using var http = factory.CreateAuthorizedClient();
+        var subject = Flows.NewSubject("cred-purge");
+
+        var login = await LoginAsync(http, subject, Credentials);
+        var sessionId = login.Text("session_id");
+
+        // Put one back on the row without collecting it, which is what a login
+        // whose caller walked away looks like.
+        Db.Write(factory, db =>
+        {
+            var session = db.Sessions.Single(s => s.Id == sessionId);
+            session.PendingCredentialBundle = "cb_v1.uncollected";
+            session.PendingBundle = "sb_v1.uncollected";
+        });
+
+        using var disconnect = await http.DeleteAsync($"/v1/{Provider}/sessions/{sessionId}");
+        Assert.Equal(HttpStatusCode.NoContent, disconnect.StatusCode);
+
+        var left = Db.Read(factory, db => db.Sessions
+            .Where(s => s.Id == sessionId)
+            .Select(s => new { s.PendingBundle, s.PendingCredentialBundle })
+            .Single());
+
+        Assert.Null(left.PendingBundle);
+        Assert.Null(left.PendingCredentialBundle);
+    }
+
     // ---- who may redeem it -------------------------------------------------
 
     /// <summary>

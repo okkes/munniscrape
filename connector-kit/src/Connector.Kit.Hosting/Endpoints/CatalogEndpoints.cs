@@ -34,12 +34,20 @@ internal static class CatalogEndpoints
             ProviderStatusService statuses,
             CancellationToken ct) =>
         {
-            var etag = $"\"{registry.CatalogDigest}\"";
+            // Health is read BEFORE the ETag is decided, because health is part
+            // of the document and therefore part of what the ETag identifies.
+            // Hashing the manifests alone made a degraded provider that
+            // recovered answer 304 for ever: the body said "degraded", the card
+            // said "a run that succeeds clears this", and no run ever could.
+            // One indexed read per revalidation is the price of the ETag
+            // meaning what HTTP says it means.
+            var health = await statuses.AllAsync(ct);
+
+            var etag = $"\"{registry.CatalogDigest}:{HealthDigest(health.Values)}\"";
             if (NotModified(http, etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
 
             http.Response.Headers.ETag = etag;
 
-            var health = await statuses.AllAsync(ct);
             var providers = registry.Manifests.Select(m => Describe(m, health.GetValueOrDefault(m.Id))).ToList();
 
             return ConnectorResults.Json(new CatalogResponse
@@ -64,11 +72,15 @@ internal static class CatalogEndpoints
             var manifest = registry.RequireManifest(id);
             RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
 
-            var etag = $"\"{registry.CatalogDigest}:{manifest.Id}\"";
+            // Same reason as above: this document carries this provider's
+            // health, so the ETag has to move when that health does.
+            var status = await statuses.GetAsync(manifest.Id, ct);
+
+            var etag = $"\"{registry.CatalogDigest}:{manifest.Id}:{HealthDigest([status])}\"";
             if (NotModified(http, etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
 
             http.Response.Headers.ETag = etag;
-            return ConnectorResults.Json(Describe(manifest, await statuses.GetAsync(manifest.Id, ct)));
+            return ConnectorResults.Json(Describe(manifest, status));
         })
         // A free-form object, exactly as CatalogResponse.Providers already
         // declares one: the manifest is serialised through a node so the
@@ -170,6 +182,39 @@ internal static class CatalogEndpoints
         Version = platform.ServiceVersion,
         ManifestDigest = registry.CatalogDigest,
     };
+
+    /// <summary>
+    /// The mutable half of the catalogue's identity.
+    /// </summary>
+    /// <remarks>
+    /// State and reason only, deliberately not <c>Since</c>. A provider that
+    /// has never had an incident carries no stored row and is reported healthy
+    /// "as of now", so a timestamp here would move on every single request and
+    /// the ETag would never match anything - which is the opposite failure to
+    /// the one this fixes, and a worse one for a document consumers are told
+    /// to cache. State and reason are what a consumer branches on; a `since`
+    /// that drifts while nothing has happened carries no information.
+    /// </remarks>
+    /// <summary>
+    /// ASCII unit separator, as a numeric escape rather than a literal so this
+    /// source carries no invisible control characters - the same convention
+    /// <see cref="Connector.Kit.Normalization.ContentHash"/> follows.
+    /// </summary>
+    private const char Separator = (char)0x1F;
+
+    private static string HealthDigest(IEnumerable<ProviderStatus> statuses)
+    {
+        // Ordered, so two servers with the same health agree on the tag and a
+        // load-balanced consumer does not thrash between two of them.
+        var parts = statuses
+            .OrderBy(s => s.ProviderId, StringComparer.Ordinal)
+            .Select(s => $"{s.ProviderId}={s.State}:{s.ReasonKey ?? "-"}");
+
+        var bytes = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(string.Join(Separator, parts)));
+
+        return Convert.ToHexStringLower(bytes)[..16];
+    }
 
     private static bool NotModified(HttpContext http, string etag)
     {

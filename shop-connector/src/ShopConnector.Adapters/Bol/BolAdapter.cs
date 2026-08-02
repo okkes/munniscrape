@@ -232,7 +232,7 @@ public sealed class BolAdapter : IProviderAdapter
 
             ctx.Progress(JobStep.Parsing);
 
-            var orders = shape.Parse(body, _options, zone);
+            var orders = shape.Parse(body, _options, zone, request.WantsRaw);
             if (orders.Count == 0)
             {
                 budgetRanOut = false;
@@ -295,8 +295,15 @@ public sealed class BolAdapter : IProviderAdapter
         ctx.Progress(JobStep.Normalizing);
 
         var receipts = new List<Receipt>(ordered.Count);
+
+        // Keyed by the same external id the receipts carry, which is how a
+        // consumer pairs the two back up.
+        var raw = new Dictionary<string, string>(StringComparer.Ordinal);
+
         foreach (var order in ordered)
         {
+            if (order.Raw is { } document) raw[order.Id] = document;
+
             receipts.Add(ReceiptFactory.Build(
                 ctx.SessionId,
                 order.Id,
@@ -324,6 +331,7 @@ public sealed class BolAdapter : IProviderAdapter
             // Nothing rotates: bol issues no token, so the stored bundle stays
             // exactly as it is until it expires.
             Via = shape.Name,
+            Raw = raw,
         };
     }
 

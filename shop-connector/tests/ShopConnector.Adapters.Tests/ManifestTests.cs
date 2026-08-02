@@ -103,7 +103,13 @@ public sealed class ManifestTests
     /// </summary>
     [Theory]
     [InlineData("ah", true)]
-    [InlineData("jumbo", false)]
+    // Both read their orders from a JSON API and can therefore hand the
+    // document back verbatim. Neither could when this test was written, and
+    // bol could not until its shape stopped being a guess about markup.
+    [InlineData("jumbo", true)]
+    [InlineData("bol", true)]
+    // Still no: these build a record from more than one call, or from a page,
+    // and there is no single document that IS the answer.
     [InlineData("picnic", false)]
     [InlineData("lidl", false)]
     public void Raw_is_offered_only_where_a_provider_document_exists_to_offer(

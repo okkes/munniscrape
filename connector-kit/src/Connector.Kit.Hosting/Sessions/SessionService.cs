@@ -287,6 +287,13 @@ public sealed class SessionService(
         await db.Profiles.Where(p => p.SessionId == session.Id)
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.SessionId, (string?)null), ct);
 
+        // Anything still waiting to be handed over. Disconnect means forget,
+        // and a bundle nobody collected is exactly what "forget" has to cover -
+        // otherwise the one action a user takes to be rid of a connection is
+        // the one that leaves their sealed credentials behind.
+        session.PendingBundle = null;
+        session.PendingCredentialBundle = null;
+
         await TransitionOrTerminateAsync(session, SessionState.Disabled, ct);
     }
 

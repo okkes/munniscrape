@@ -190,6 +190,12 @@ public sealed class ExpiryService(
             .ExecuteUpdateAsync(u => u
                 .SetProperty(s => s.State, SessionState.Expired)
                 .SetProperty(s => s.PendingBundle, (string?)null)
+                // Both, not just the session one. A credential bundle is only
+                // cleared when it is collected, so a login whose bundle nobody
+                // ever came back for would leave the user's sealed credentials
+                // sitting on an expired row - the one row guaranteed never to
+                // be read again.
+                .SetProperty(s => s.PendingCredentialBundle, (string?)null)
                 .SetProperty(s => s.UpdatedAt, now), ct);
     }
 

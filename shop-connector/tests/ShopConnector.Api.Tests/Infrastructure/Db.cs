@@ -23,6 +23,22 @@ internal static class Db
         return read(db);
     }
 
+    /// <summary>
+    /// Put a row into a state the API alone cannot reach - an uncollected
+    /// bundle, say, which the delivery path clears the moment it is read.
+    /// </summary>
+    public static void Write(ShopApiFactory factory, Action<ConnectorDbContext> write)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        ArgumentNullException.ThrowIfNull(write);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ConnectorDbContext>();
+
+        write(db);
+        db.SaveChanges();
+    }
+
     public static int StagedRows(ShopApiFactory factory, string sessionId) =>
         Read(factory, db => db.Results.Count(r => r.SessionId == sessionId));
 

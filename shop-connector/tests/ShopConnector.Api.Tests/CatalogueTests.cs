@@ -30,10 +30,12 @@ public sealed class CatalogueTests(ShopApiFactory factory)
         var digest = service.Text("manifest_digest");
         Assert.StartsWith("sha256:", digest, StringComparison.Ordinal);
 
-        // The ETag is the digest, so a consumer can revalidate from a value it
-        // already parsed rather than a header it has to keep separately.
+        // The ETag opens with the digest, so a consumer can still recognise it
+        // from a value it already parsed. It does not END there: provider
+        // health is part of this document and therefore part of what the ETag
+        // identifies, so a second component moves when health does.
         var etag = Assert.Single(response.RawHeader("ETag"));
-        Assert.Equal($"\"{digest}\"", etag);
+        Assert.StartsWith($"\"{digest}:", etag, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -70,6 +72,123 @@ public sealed class CatalogueTests(ShopApiFactory factory)
         // Health is grafted on to the manifest: this is what lets a consumer say
         // "paused, we're fixing it" instead of showing a spinner.
         Assert.Equal("healthy", captcha.GetProperty("status").Text("state"));
+    }
+
+    /// <summary>
+    /// The catalogue carries provider health, so a consumer holding a cached
+    /// copy has to be told when that health moves.
+    ///
+    /// Hashing only the manifests made this document permanently stale: a
+    /// provider degraded, an operator fixed it, and every conditional request
+    /// still answered 304 with the old verdict. The consumer's own card said
+    /// "a run that succeeds clears this" and no run ever could - the only
+    /// escape was a hard refresh, which a caching client has no reason to do.
+    /// </summary>
+    [Fact]
+    public async Task Health_moving_invalidates_a_cached_catalogue()
+    {
+        using var http = factory.CreateAuthorizedClient();
+
+        using var before = await http.GetAsync("/v1/providers");
+        var stale = Assert.Single(before.RawHeader("ETag"));
+
+        await SetStatusAsync(http, MockStoreAdapters.Simple, "degraded", "connect.provider.changed");
+
+        try
+        {
+            // The same conditional request that was a 304 a moment ago.
+            using var request = Wire.Get("/v1/providers");
+            request.AddHeader("If-None-Match", stale);
+
+            using var after = await http.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+
+            var fresh = Assert.Single(after.RawHeader("ETag"));
+            Assert.NotEqual(stale, fresh);
+
+            var provider = Find((await after.JsonAsync()).GetProperty("providers"), MockStoreAdapters.Simple);
+            Assert.Equal("degraded", provider.GetProperty("status").Text("state"));
+        }
+        finally
+        {
+            await SetStatusAsync(http, MockStoreAdapters.Simple, "healthy", null);
+        }
+    }
+
+    /// <summary>
+    /// And back again: recovering has to move the tag too, or a consumer that
+    /// cached the degraded document would keep showing a warning about a
+    /// provider that is working.
+    /// </summary>
+    [Fact]
+    public async Task Recovering_also_invalidates_a_cached_catalogue()
+    {
+        using var http = factory.CreateAuthorizedClient();
+
+        await SetStatusAsync(http, MockStoreAdapters.Captcha, "degraded", "connect.provider.changed");
+
+        string degradedTag;
+        try
+        {
+            using var degraded = await http.GetAsync("/v1/providers");
+            degradedTag = Assert.Single(degraded.RawHeader("ETag"));
+        }
+        finally
+        {
+            await SetStatusAsync(http, MockStoreAdapters.Captcha, "healthy", null);
+        }
+
+        using var request = Wire.Get("/v1/providers");
+        request.AddHeader("If-None-Match", degradedTag);
+
+        using var after = await http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+
+        var provider = Find((await after.JsonAsync()).GetProperty("providers"), MockStoreAdapters.Captcha);
+        Assert.Equal("healthy", provider.GetProperty("status").Text("state"));
+    }
+
+    /// <summary>
+    /// The single-provider document carries the same health, and a consumer
+    /// polling one provider it cares about is exactly who would be pinned to a
+    /// stale answer longest.
+    /// </summary>
+    [Fact]
+    public async Task Health_moving_invalidates_a_cached_single_provider_document()
+    {
+        using var http = factory.CreateAuthorizedClient();
+        var url = $"/v1/providers/{MockStoreAdapters.Sms}";
+
+        using var before = await http.GetAsync(url);
+        var stale = Assert.Single(before.RawHeader("ETag"));
+
+        await SetStatusAsync(http, MockStoreAdapters.Sms, "degraded", "connect.provider.changed");
+
+        try
+        {
+            using var request = Wire.Get(url);
+            request.AddHeader("If-None-Match", stale);
+
+            using var after = await http.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+            Assert.NotEqual(stale, Assert.Single(after.RawHeader("ETag")));
+            Assert.Equal("degraded", (await after.JsonAsync()).GetProperty("status").Text("state"));
+        }
+        finally
+        {
+            await SetStatusAsync(http, MockStoreAdapters.Sms, "healthy", null);
+        }
+    }
+
+    private static async Task SetStatusAsync(HttpClient http, string providerId, string state, string? reasonKey)
+    {
+        using var request = Wire.Post($"/v1/admin/providers/{providerId}/status", new { state, reasonKey });
+        using var response = await http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]

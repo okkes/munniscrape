@@ -152,7 +152,10 @@ internal static class JumboManifest
                 [
                     new ParamSpec { Key = "since", Type = ParamType.Date, Required = true },
                     new ParamSpec { Key = "until", Type = ParamType.Date },
-                    new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items"], Multi = true },
+                    // "raw" hands back each purchase exactly as Jumbo's API sent it.
+                    // Opt-in: a verbatim copy of somebody's shopping is not
+                    // something to carry unasked.
+                    new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items", "raw"], Multi = true },
                 ],
                 // Longer than it was: an in-store receipt costs a second round
                 // trip before it can state a total at all, which the previous

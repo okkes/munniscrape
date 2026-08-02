@@ -26,6 +26,16 @@ internal sealed record BolOrder
     public ReceiptPayment Payment { get; init; } = ReceiptFactory.Payment();
 
     public IReadOnlyList<ReceiptItem> Items { get; init; } = [];
+
+    /// <summary>
+    /// This order exactly as bol sent it, or null when the caller did not ask.
+    /// </summary>
+    /// <remarks>
+    /// Null unless requested, rather than captured and dropped later: it is a
+    /// verbatim copy of somebody's purchase and the cheapest way not to leak it
+    /// is not to hold it.
+    /// </remarks>
+    public string? Raw { get; init; }
 }
 
 /// <summary>
@@ -93,7 +103,13 @@ internal interface IBolOrdersShape
     /// <see cref="ErrorCode.ProviderChanged"/> naming what was missing, never
     /// a quiet zero.
     /// </summary>
-    IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone);
+    /// <param name="keepRaw">
+    /// Whether to carry each order's verbatim payload out on
+    /// <see cref="BolOrder.Raw"/>. Off by default: the caller has to ask for
+    /// somebody's purchase in full, and a shape that cannot produce one simply
+    /// leaves it null.
+    /// </param>
+    IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false);
 }
 
 internal static class BolShapes
