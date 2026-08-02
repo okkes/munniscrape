@@ -55,6 +55,22 @@ const KEYS = {
     'Solve the captcha in the browser window we opened for you. There is nothing to type here - once the provider lets us through, this page moves on by itself.',
   'connect.challenge.sms_code': 'Enter the code we just texted you.',
 
+  // Lidl Plus, and the one challenge in this file whose instructions are
+  // mostly about a browser error message.
+  //
+  // Lidl's OAuth client is the phone app, so it sends you back to
+  // com.lidlplus.app://callback?code=... - a scheme only that app can open.
+  // A desktop browser cannot follow it and will say the site cannot be
+  // reached. That failure IS the success case, and without being told so
+  // first, a person reasonably reads it as the connection having broken and
+  // closes the tab. The address bar still holds the whole URL, and the code
+  // in it is what we need.
+  'connect.challenge.sign_in_on_site':
+    'Open the link above and sign in to Lidl. When you are done, your browser will try to reach an '
+    + 'address starting "com.lidlplus.app://" and will say it cannot - that is expected, because only '
+    + 'the Lidl app can open that kind of address. Copy the whole address out of the bar and paste it '
+    + 'below. It works once, so if anything goes wrong, start the connection again rather than reusing it.',
+
   // ── the streamed login ───────────────────────────────────────────────
   //
   // This copy is part of the product, not decoration around it. The person
