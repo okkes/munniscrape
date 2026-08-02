@@ -33,7 +33,11 @@ namespace ShopConnector.Adapters.Tests;
 /// </summary>
 public sealed class BolParsingTests
 {
-    private static readonly BolOptions Html = new();
+    // Stated rather than defaulted. These two shapes were written before anyone
+    // had seen bol's account pages and the default now points at the one that
+    // was captured, so a test naming an HTML fixture has to name the HTML shape
+    // with it.
+    private static readonly BolOptions Html = new() { OrdersShape = BolOrdersShape.Html };
 
     private static readonly BolOptions Json = new() { OrdersShape = BolOrdersShape.Json };
 

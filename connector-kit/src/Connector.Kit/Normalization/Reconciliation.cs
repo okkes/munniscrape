@@ -26,6 +26,13 @@ public static class Reconciliation
     public static bool ItemsReconcile(Receipt receipt)
     {
         ArgumentNullException.ThrowIfNull(receipt);
+
+        // A total this connector summed itself agrees with its own lines by
+        // construction, so checking it proves nothing. Reporting that as a
+        // pass would make the flag mean "reconciled" on one provider and
+        // "nothing was checked" on another, which is worse than either.
+        if (receipt.TotalIsDerived) return false;
+
         if (receipt.Items.Count == 0) return true;   // nothing to check against
 
         var sum = 0L;

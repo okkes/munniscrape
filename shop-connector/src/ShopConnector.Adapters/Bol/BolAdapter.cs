@@ -300,7 +300,14 @@ public sealed class BolAdapter : IProviderAdapter
                 // A caller that did not ask for items gets none, and a receipt
                 // with no items reconciles trivially rather than falsely: there
                 // is nothing to check a total against.
-                request.WantsItems ? order.Items : []));
+                request.WantsItems ? order.Items : [],
+                // The GraphQL payload states no order total anywhere, so this
+                // one is our own sum of its lines. Saying so is what stops the
+                // reconciliation flag meaning two different things on two
+                // providers: everywhere else it means a stated total was
+                // checked and agreed, and here there was never a stated total
+                // to check.
+                shape.TotalIsDerived));
         }
 
         return new FetchResult
@@ -332,7 +339,15 @@ public sealed class BolAdapter : IProviderAdapter
         var url = shape.Url(_options, page);
         var what = $"orders page {page} ({shape.Name} shape)";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        var payload = shape.Body(_options, page);
+
+        using var request = new HttpRequestMessage(payload is null ? HttpMethod.Get : HttpMethod.Post, url);
+
+        if (payload is not null)
+        {
+            request.Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+        }
+
         request.Headers.TryAddWithoutValidation("Cookie", cookies);
         request.Headers.TryAddWithoutValidation("User-Agent", _options.UserAgent);
         request.Headers.TryAddWithoutValidation("Accept", shape.Accept);

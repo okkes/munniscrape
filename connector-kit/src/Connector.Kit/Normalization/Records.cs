@@ -127,8 +127,33 @@ public sealed record Receipt : NormalizedRecord
     /// False when the items and discounts do not sum to the stated total.
     /// The record is still emitted - with a warning rather than silently
     /// dropped - so the consumer can decide what to do with it.
+    ///
+    /// Also false when <see cref="TotalIsDerived"/> is true, because there was
+    /// no stated total to check against and a check that was never made must
+    /// not read as one that passed.
     /// </summary>
     public bool Reconciled { get; init; } = true;
+
+    /// <summary>
+    /// True when <see cref="Total"/> is this connector's own sum of the lines
+    /// rather than a number the provider stated.
+    /// </summary>
+    /// <remarks>
+    /// bol.com is the case: its order API carries a unit price per line and no
+    /// order total anywhere. Summing the lines is the only total available, and
+    /// reconciling that sum against the lines it came from would be comparing a
+    /// number with itself - it can never fail, so it can never mean anything.
+    /// <para>
+    /// It is a separate field rather than a third state on
+    /// <see cref="Reconciled"/> because the two say different things and a
+    /// consumer needs both: "these lines do not add up to what the shop said"
+    /// is a discrepancy worth showing a user, while "nobody stated a total" is
+    /// a fact about the provider. Collapsing them would make the first
+    /// unactionable.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("total_is_derived")]
+    public bool TotalIsDerived { get; init; }
 }
 
 public sealed record Merchant

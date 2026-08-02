@@ -18,11 +18,18 @@ internal static class ReceiptFactory
         DateTimeOffset purchasedAt,
         Money total,
         ReceiptPayment payment,
-        IReadOnlyList<ReceiptItem> items)
+        IReadOnlyList<ReceiptItem> items,
+        bool totalIsDerived = false)
     {
         // Reconcile first, hash second. The hash covers the facts, not the
         // verdict, so the order is not load-bearing today - fixing it here
         // keeps it from becoming load-bearing by accident later.
+        //
+        // totalIsDerived is a parameter rather than something an adapter
+        // stamps on afterwards, because the verdict is computed FROM it: a
+        // receipt whose total is our own sum of its lines cannot be reconciled,
+        // and `receipt with { TotalIsDerived = true }` on a finished receipt
+        // would leave Reconciled saying it had been.
         var receipt = new Receipt
         {
             Id = Ids.ForRecord(Ids.Receipt, sessionId, externalId),
@@ -32,6 +39,7 @@ internal static class ReceiptFactory
             Total = total,
             Payment = payment,
             Items = items,
+            TotalIsDerived = totalIsDerived,
         }.WithReconciliation();
 
         return receipt with { ContentHash = ContentHash.Of(receipt) };

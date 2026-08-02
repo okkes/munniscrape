@@ -67,6 +67,12 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
             // otherwise land on the wrong day on the consumer's side.
             Assert.True(receipt.GetProperty("purchased_at").TryGetDateTimeOffset(out var purchasedAt));
             Assert.NotEqual(TimeSpan.Zero, purchasedAt.Offset);
+
+            // Stated on every receipt rather than only where it is true, so a
+            // consumer can read one field instead of guessing from its absence.
+            // This provider states its own totals, so ours is never a sum of
+            // the lines - which is what makes `reconciled` below mean something.
+            Assert.False(receipt.GetProperty("total_is_derived").GetBoolean());
         }
 
         var byExternalId = receipts.ToDictionary(r => r.Text("external_id"), StringComparer.Ordinal);

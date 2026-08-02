@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Net;
 using Connector.Kit.Adapters;
 using Connector.Kit.Challenges;
@@ -42,6 +43,13 @@ public sealed class BolAdapterTests
     private static readonly DateTimeOffset Now = new(2026, 7, 28, 3, 0, 0, TimeSpan.Zero);
 
     private static readonly BolOptions Options = new();
+
+    /// <summary>
+    /// For the tests that serve an HTML fixture. The default shape is the
+    /// captured GraphQL one, so a test about the page walk has to say that it
+    /// means the page.
+    /// </summary>
+    private static readonly BolOptions Pages = Options with { OrdersShape = BolOrdersShape.Html };
 
     private static readonly string Username = Options.UsernameSelectors[0];
     private static readonly string PasswordBox = Options.PasswordSelectors[0];
@@ -535,7 +543,7 @@ public sealed class BolAdapterTests
         var handler = new StubHttpHandler((_, _) => Html(FixtureCatalog.Read("bol/orders-page.html")));
         using var ctx = FetchContext(handler);
 
-        var result = await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+        var result = await Adapter(Pages).FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
 
         Assert.Equal("html", result.Via);
         Assert.Equal(3, result.Receipts.Count);
@@ -550,6 +558,71 @@ public sealed class BolAdapterTests
         // exactly as it is until it expires.
         Assert.Null(result.RefreshedMaterial);
         Assert.True(result.Complete);
+    }
+
+    /// <summary>
+    /// The default shape, and the only one written against a payload anyone has
+    /// seen. A GET would come back with bol's GraphQL playground rather than
+    /// orders, so the operation reaching the wire as a POST body is the whole
+    /// claim.
+    /// </summary>
+    [Fact]
+    public async Task The_default_shape_posts_bol_s_own_persisted_operation()
+    {
+        var handler = new StubHttpHandler((_, i) => i == 0
+            ? Stub.Fixture("bol/orders-graphql.json")
+            : Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+
+        using var ctx = FetchContext(handler);
+
+        var result = await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        Assert.Equal("graphql", result.Via);
+
+        var request = handler.Requests[0];
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("https://www.bol.com/api/graphql", request.Uri.ToString());
+        Assert.Contains("application/json", request.Header("Content-Type"), StringComparison.Ordinal);
+
+        using var sent = JsonDocument.Parse(request.Body!);
+        Assert.Equal("OrdersOverviewClient", sent.RootElement.GetProperty("operationName").GetString());
+        Assert.Equal(
+            Options.OrdersPersistedQueryHash,
+            sent.RootElement.GetProperty("extensions").GetProperty("persistedQuery")
+                .GetProperty("sha256Hash").GetString());
+
+        // The cursor advances with the walk, which is what stops page two from
+        // being page one again.
+        using var second = JsonDocument.Parse(handler.Requests[1].Body!);
+        Assert.Equal("0", sent.RootElement.GetProperty("variables").GetProperty("after").GetString());
+        Assert.Equal("5", second.RootElement.GetProperty("variables").GetProperty("after").GetString());
+    }
+
+    /// <summary>
+    /// bol states no order total, so the receipt's is our own sum and the flag
+    /// has to survive all the way out of the adapter. A receipt that arrived
+    /// reconciled here would be telling a downstream matcher that bol confirmed
+    /// a number bol never said.
+    /// </summary>
+    [Fact]
+    public async Task A_receipt_bol_never_totalled_leaves_the_adapter_saying_so()
+    {
+        var handler = new StubHttpHandler((_, i) => i == 0
+            ? Stub.Fixture("bol/orders-graphql.json")
+            : Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+
+        using var ctx = FetchContext(handler);
+
+        var result = await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        Assert.NotEmpty(result.Receipts);
+        Assert.All(result.Receipts, r => Assert.True(r.TotalIsDerived));
+        Assert.All(result.Receipts, r => Assert.False(r.Reconciled));
+
+        // And the sum itself is still right - "not reconciled" is a statement
+        // about what was checked, not a licence to be wrong.
+        var order = result.Receipts.Single(r => r.ExternalId == "A000TEST002");
+        Assert.Equal(4248 + 1199, order.Total.Value);
     }
 
     [Fact]
@@ -687,7 +760,7 @@ public sealed class BolAdapterTests
         var handler = new StubHttpHandler((_, _) => Html(FixtureCatalog.Read("bol/orders-page.html")));
         using var ctx = FetchContext(handler);
 
-        var result = await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+        var result = await Adapter(Pages).FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
 
         Assert.Equal(3, result.Receipts.Count);
         Assert.Equal(2, handler.Requests.Count);

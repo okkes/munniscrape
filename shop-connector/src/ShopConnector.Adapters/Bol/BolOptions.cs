@@ -14,10 +14,19 @@ namespace ShopConnector.Adapters.Bol;
 /// </summary>
 public enum BolOrdersShape
 {
-    /// <summary>The default. Parse the account page's own markup.</summary>
+    /// <summary>
+    /// The default, and the only one confirmed against a real account.
+    ///
+    /// bol's order overview is a shell: the first orders arrive in the page and
+    /// every "Toon meer" is a GraphQL call. So this is not a guess between two
+    /// possibilities any more - it is what the site does.
+    /// </summary>
+    GraphQl,
+
+    /// <summary>Parse the account page's own markup. Superseded; see the README.</summary>
     Html,
 
-    /// <summary>Read a JSON endpoint instead. Endpoint and payload are unconfirmed - see the options below.</summary>
+    /// <summary>A plain JSON endpoint. Never found; kept because the parser is written and tested.</summary>
     Json,
 }
 
@@ -262,7 +271,50 @@ public sealed record BolOptions
     /// Which of the two implemented shapes to read. HTML by default, because
     /// the page is known to exist and the JSON endpoint is not known to.
     /// </summary>
-    public BolOrdersShape OrdersShape { get; init; } = BolOrdersShape.Html;
+    public BolOrdersShape OrdersShape { get; init; } = BolOrdersShape.GraphQl;
+
+    // ---- the GraphQL shape: CONFIRMED live, 2026-08-02 -----------------------
+
+    /// <summary>CONFIRMED. The endpoint every "Toon meer" posts to.</summary>
+    public string GraphQlUrl { get; init; } = "https://www.bol.com/api/graphql";
+
+    /// <summary>CONFIRMED. The operation the order overview runs.</summary>
+    public string OrdersOperationName { get; init; } = "OrdersOverviewClient";
+
+    /// <summary>
+    /// CONFIRMED. An automatic persisted query: bol sends this hash and no
+    /// document at all.
+    /// </summary>
+    /// <remarks>
+    /// It pins a specific compiled operation, so it is the value most likely
+    /// to move when bol ships a front end. A hash bol no longer knows answers
+    /// <c>PersistedQueryNotFound</c>, which this adapter reports as
+    /// <c>provider_changed</c> naming this setting - an operator edit, not a
+    /// release. There is no document to fall back to: the schema is not public
+    /// and inventing one would be guessing at the shape all over again.
+    /// </remarks>
+    public string OrdersPersistedQueryHash { get; init; } =
+        "sha256:d195253b815a6082cdee63bef6234513d5c0520c9f064e96fc1a9037d689add2";
+
+    /// <summary>
+    /// CONFIRMED. The cursor variable, and it really is a string: bol sends
+    /// <c>"5"</c>, then <c>"10"</c> - an offset, not an opaque token.
+    /// </summary>
+    public string AfterVariable { get; init; } = "after";
+
+    /// <summary>CONFIRMED. Five orders per call, which is what the button fetches.</summary>
+    public int OrdersPageSize { get; init; } = 5;
+
+    /// <summary>
+    /// CONFIRMED, and the one value on bol worth being certain about.
+    ///
+    /// <c>listPrice.priceInclVat.amount</c> is a JSON number in euros -
+    /// <c>31.75</c>, not <c>3175</c>. Observed rather than inferred, because
+    /// this is the setting whose wrong value cannot be caught downstream: were
+    /// it declared minor, every bol receipt would be a hundredth of the truth
+    /// and would still reconcile, since the same number feeds both sides.
+    /// </summary>
+    public MoneyUnit GraphQlAmountUnit { get; init; } = MoneyUnit.MajorDecimal;
 
     /// <summary>
     /// CONFIRMED path, UNCONFIRMED pagination. The account app is bol's

@@ -56,6 +56,28 @@ internal interface IBolOrdersShape
     string Accept { get; }
 
     /// <summary>
+    /// The request body, or null to send none.
+    /// </summary>
+    /// <remarks>
+    /// GraphQL is a POST with an operation in it, and the two page shapes are
+    /// plain GETs. The seam carries the difference rather than the adapter
+    /// branching on which shape it happens to be holding - that branch is
+    /// exactly what this interface exists to avoid.
+    /// </remarks>
+    string? Body(BolOptions options, int page) => null;
+
+    /// <summary>
+    /// True where this shape's orders carry no stated total and the one on the
+    /// receipt is therefore our own sum of its lines.
+    /// </summary>
+    /// <remarks>
+    /// A property of the SHAPE rather than of the adapter, because it is a
+    /// property of what the payload states: the page markup shows an order
+    /// total and the GraphQL payload does not.
+    /// </remarks>
+    bool TotalIsDerived => false;
+
+    /// <summary>
     /// Orders out of one page's body. Returns an empty list only where the
     /// body says so itself - an unrecognisable body is
     /// <see cref="ErrorCode.ProviderChanged"/> naming what was missing, never
@@ -68,6 +90,7 @@ internal static class BolShapes
 {
     public static IBolOrdersShape For(BolOrdersShape shape) => shape switch
     {
+        BolOrdersShape.GraphQl => new BolGraphQlShape(),
         BolOrdersShape.Html => new BolHtmlShape(),
         BolOrdersShape.Json => new BolJsonShape(),
         _ => throw ConnectorException.InvalidRequest($"bol: no orders shape '{shape}'"),

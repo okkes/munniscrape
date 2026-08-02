@@ -253,13 +253,43 @@ export function records(shape, rows) {
   }
 }
 
+/**
+ * A derived total is checked first, because a receipt carrying one is always
+ * unreconciled: there was no stated total to check ours against. Reading the
+ * reconciliation flag first would report every bol receipt as a mismatch.
+ */
+function totalBadge(reconciled, derived) {
+  if (derived) return badge('total derived', 'warn');
+  return reconciled ? badge('reconciled', 'good') : badge('NOT RECONCILED', 'bad');
+}
+
+function totalNote(reconciled, derived) {
+  if (derived) {
+    return note('This provider states no order total, so the one shown is the connector\'s own sum ',
+      'of the line items. Nothing independent was checked against it, which is why it is not ',
+      'marked reconciled - the flag means "the provider\'s total was verified", and here there was none.');
+  }
+
+  if (reconciled) return null;
+
+  return note('The line items and discounts do not add up to the stated total. ',
+    'The connector handed it over anyway, flagged, instead of dropping it or guessing.');
+}
+
 function receipt(row) {
   const items = row.items ?? [];
   const merchant = row.merchant ?? {};
   const payment = row.payment ?? {};
   const reconciled = row.reconciled !== false;
 
-  return h('li', { class: `record record-receipt ${reconciled ? '' : 'is-unreconciled'}`.trim() },
+  // Two very different reasons a receipt can arrive unreconciled, and only one
+  // of them is a problem. A derived total is one the provider never stated, so
+  // the connector summed the lines itself - there was nothing to check it
+  // against. Showing that as "NOT RECONCILED" in the same red as a receipt
+  // whose numbers genuinely disagree teaches the user to ignore the badge.
+  const derived = row.total_is_derived === true;
+
+  return h('li', { class: `record record-receipt ${reconciled || derived ? '' : 'is-unreconciled'}`.trim() },
     h('div', { class: 'record-head' },
       h('div', {},
         h('strong', {}, merchant.name ?? 'Unknown merchant'),
@@ -270,9 +300,7 @@ function receipt(row) {
         // The platform emits an unreconciled receipt rather than dropping
         // it, so the consumer decides. Hiding the badge would throw away
         // the one signal that says "these line items do not add up".
-        reconciled
-          ? badge('reconciled', 'good')
-          : badge('NOT RECONCILED', 'bad'))),
+        totalBadge(reconciled, derived))),
 
     h('div', { class: 'record-meta' },
       payment.method ? h('code', {}, payment.method) : null,
@@ -283,10 +311,7 @@ function receipt(row) {
       !payment.card_last4 && !payment.iban_tail ? h('code', { class: 'muted' }, 'no payment tail') : null,
       h('code', { class: 'muted' }, row.id ?? '')),
 
-    reconciled
-      ? null
-      : note('The line items and discounts do not add up to the stated total. ',
-        'The connector handed it over anyway, flagged, instead of dropping it or guessing.'),
+    totalNote(reconciled, derived),
 
     items.length === 0
       ? null
