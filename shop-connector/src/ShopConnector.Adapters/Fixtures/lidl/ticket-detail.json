@@ -1,56 +1,41 @@
 {
-  "id": "lidl-2026-07-18-8801",
-  "date": "2026-07-18T18:04:00",
-  "totalAmount": "14,27",
-  "storeName": "Lidl Utrecht Kanaleneiland",
-  "currency": {
-    "code": "EUR",
-    "symbol": "€"
-  },
-  "itemsLine": [
-    {
-      "name": "Bio volle melk 1L",
-      "quantity": "2",
-      "currentUnitPrice": "1,29",
-      "extendedAmount": "2,58",
-      "isWeight": false,
-      "discounts": []
-    },
-    {
-      "name": "Kipfilet 500g",
-      "quantity": "1",
-      "currentUnitPrice": "5,49",
-      "extendedAmount": "5,49",
-      "isWeight": false,
-      "discounts": [
-        {
-          "description": "Lidl Plus korting",
-          "amount": "0,50"
-        }
-      ]
-    },
-    {
-      "name": "Roggebrood",
-      "quantity": "1",
-      "currentUnitPrice": "1,19",
-      "extendedAmount": "1,19",
-      "isWeight": false,
-      "discounts": []
-    },
-    {
-      "name": "Espresso bonen 1kg",
-      "quantity": "1",
-      "currentUnitPrice": "5,51",
-      "extendedAmount": "5,51",
-      "isWeight": false,
-      "discounts": []
-    }
+  "_comment": [
+    "The REAL shape of a Lidl v3 ticket detail, captured 2026-08-04, with a",
+    "shopping list nobody actually bought. The structure is verbatim and is the",
+    "point of the file: ticketType HTML, no line-item collection anywhere, and",
+    "the lines carried in htmlPrintedReceipt as spans whose data attributes hold",
+    "the article id, description, unit price and (for weighed goods) quantity.",
+    "It replaces a fixture built from field names - itemsLine, payments - that",
+    "this API has never had.",
+    "Three structures are deliberate: a plain article, a markdown line printed",
+    "under the article it reduces, and a weighed article whose total is neither",
+    "its unit price nor a round multiple of it (0,850 kg x 1,79 = 1,52, not",
+    "1,5215). Items plus discounts sum to 3,76 exactly."
   ],
-  "payments": [
-    {
-      "type": "MAESTRO",
-      "cardNumber": "XXXXXXXXXXXX4821",
-      "amount": "14,27"
-    }
-  ]
+  "ticketType": "HTML",
+  "id": "22000263862026080411111",
+  "barCode": "0888026308829286040826",
+  "couponsUsed": [],
+  "offersUsed": [],
+  "returnedHtmlTickets": [],
+  "isFavorite": false,
+  "date": "2026-08-04T12:51:18",
+  "totalAmount": 3.76,
+  "store": {
+    "id": "NL0999",
+    "name": "Testdorp",
+    "address": "Teststraat 1",
+    "postalCode": "1000 AA",
+    "locality": "Testdorp",
+    "schedule": ""
+  },
+  "fiscalDataAt": null,
+  "languageCode": "nl",
+  "htmlPrintedReceipt": "<html><head></head><body><pre>\r\n<span class=\"header\"><span id=\"header_line_2\">   </span><span id=\"header_line_2\" class=\"css_bold\">Lidl Testdorp</span></span>\r\n<span class=\"purchase_list\"><span id=\"purchase_list_line_1\" class=\"currency css_bold\">OMSCHRIJVING</span><span id=\"purchase_list_line_1\" class=\"currency css_bold\">EUR</span>\r\n<span id=\"purchase_list_line_2\" class=\"article\" data-art-id=\"0001111\" data-art-description=\"Bruin brood\" data-unit-price=\"1,29\" data-tax-type=\"B\" >Bruin brood</span><span id=\"purchase_list_line_2\" class=\"article\" data-art-id=\"0001111\" data-art-description=\"Bruin brood\" data-unit-price=\"1,29\" data-tax-type=\"B\" >                 </span><span id=\"purchase_list_line_2\" class=\"article\" data-art-id=\"0001111\" data-art-description=\"Bruin brood\" data-unit-price=\"1,29\" data-tax-type=\"B\" >1,29</span><span id=\"purchase_list_line_2\" class=\"article\" data-art-id=\"0001111\" data-art-description=\"Bruin brood\" data-unit-price=\"1,29\" data-tax-type=\"B\" > </span><span id=\"purchase_list_line_2\" class=\"article\" data-art-id=\"0001111\" data-art-description=\"Bruin brood\" data-unit-price=\"1,29\" data-tax-type=\"B\" >B</span>\r\n<span id=\"purchase_list_line_3\" class=\"article\" data-art-id=\"0002222\" data-art-description=\"Halfvolle melk\" data-unit-price=\"1,15\" data-tax-type=\"B\" >Halfvolle melk</span><span id=\"purchase_list_line_3\" class=\"article\" data-art-id=\"0002222\" data-art-description=\"Halfvolle melk\" data-unit-price=\"1,15\" data-tax-type=\"B\" >              </span><span id=\"purchase_list_line_3\" class=\"article\" data-art-id=\"0002222\" data-art-description=\"Halfvolle melk\" data-unit-price=\"1,15\" data-tax-type=\"B\" >1,15</span><span id=\"purchase_list_line_3\" class=\"article\" data-art-id=\"0002222\" data-art-description=\"Halfvolle melk\" data-unit-price=\"1,15\" data-tax-type=\"B\" > </span><span id=\"purchase_list_line_3\" class=\"article\" data-art-id=\"0002222\" data-art-description=\"Halfvolle melk\" data-unit-price=\"1,15\" data-tax-type=\"B\" >B</span>\r\n<span id=\"purchase_list_line_4\">In prijs verlaagd</span><span id=\"purchase_list_line_4\">   </span><span id=\"purchase_list_line_4\">-0,20</span>\r\n<span id=\"purchase_list_line_5\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >Bananen</span><span id=\"purchase_list_line_5\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >                     </span><span id=\"purchase_list_line_5\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >1,52</span><span id=\"purchase_list_line_5\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" > </span><span id=\"purchase_list_line_5\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >B</span>\r\n<span id=\"purchase_list_line_6\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >  </span><span id=\"purchase_list_line_6\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >0,850</span><span id=\"purchase_list_line_6\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" > </span><span id=\"purchase_list_line_6\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >kg x</span><span id=\"purchase_list_line_6\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" > </span><span id=\"purchase_list_line_6\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >1,79</span><span id=\"purchase_list_line_6\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >  </span><span id=\"purchase_list_line_6\" class=\"article\" data-art-id=\"0003333\" data-art-description=\"Bananen\" data-art-quantity=\"0,850\" data-unit-price=\"1,79\" data-tax-type=\"B\" >EUR</span>\r\n</span><span class=\"purchase_summary\"><span id=\"purchase_summary_2\" class=\"css_bold\">Aantal</span><span id=\"purchase_summary_2\" class=\"css_bold\">3 art.</span>\r\n<span id=\"purchase_summary_3\" class=\"css_big css_bold\">Totaal</span><span id=\"purchase_summary_3\">   </span><span id=\"purchase_summary_3\" class=\"css_big css_bold\">3,76</span>\r\n<span id=\"purchase_summary_4\" data-tender-description=\"Bankpas\" class=\"css_bold\">Bankpas</span><span id=\"purchase_summary_4\" data-tender-description=\"Bankpas\">     </span><span id=\"purchase_summary_4\" data-tender-description=\"Bankpas\" class=\"css_bold\">3,76</span>\r\n</span><span class=\"purchase_tender_information\"><span id=\"purchase_tender_information_6\" class=\"css_bold\">Kaart                 xxxxxxxxxxxx4321    </span>\r\n</span></pre></body></html>",
+  "printedReceiptState": "PRINTED",
+  "hasInvoice": false,
+  "codes": [],
+  "showCopy": true,
+  "isDeleted": false,
+  "collectingModel": null
 }

@@ -80,10 +80,22 @@ public sealed record LidlPlusOptions
     public string AppHeader { get; init; } = "com.lidl.eci.lidl.plus";
 
     /// <summary>
-    /// UNCONFIRMED unit. Lidl states amounts as comma-decimal strings
-    /// ("12,34"). Declared, never sniffed, and checked by reconciliation.
+    /// CONFIRMED on 2026-08-04, and it was declared wrong.
+    ///
+    /// A v3 ticket detail states <c>"totalAmount": 19.73</c> - a JSON NUMBER
+    /// in euros, not a string. It was declared MajorString, which happened to
+    /// work only because the reader accepts either; declaring what the payload
+    /// actually is removes a coincidence from the one setting whose wrong
+    /// value cannot be caught downstream.
     /// </summary>
-    public MoneyUnit AmountUnit { get; init; } = MoneyUnit.MajorString;
+    public MoneyUnit AmountUnit { get; init; } = MoneyUnit.MajorDecimal;
+
+    /// <summary>
+    /// The unit the PRINTED receipt uses, which is a different question from
+    /// the JSON above: the till prints "0,79" with a comma, and its lines are
+    /// read as text rather than as numbers.
+    /// </summary>
+    public MoneyUnit PrintedAmountUnit { get; init; } = MoneyUnit.MajorDecimal;
 
     public string Currency { get; init; } = "EUR";
 

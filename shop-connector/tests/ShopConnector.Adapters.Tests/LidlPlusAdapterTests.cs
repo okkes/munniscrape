@@ -60,12 +60,23 @@ public sealed class LidlPlusAdapterTests
         var receipt = Assert.Single(result.Receipts);
         Assert.Equal("lidl-2026-07-18-8801", receipt.ExternalId);
         Assert.Equal("lidl", receipt.Merchant.Id);
-        Assert.Equal("Lidl Utrecht Kanaleneiland", receipt.Merchant.StoreName);
-        Assert.Equal(1427, receipt.Total.Value);
+        // The branch NAME, from the store object the detail states - not its
+        // code. Reading `store` as a string gave "NL0263" and titled every
+        // receipt in the demo with it.
+        Assert.Equal("Testdorp", receipt.Merchant.StoreName);
+        // From the DETAIL's totalAmount, which is a JSON number in euros.
+        Assert.Equal(376, receipt.Total.Value);
+
+        // The detail's own wall-clock date, read in the store's country zone -
+        // not the list's, which put every receipt two hours late.
         Assert.Equal(TimeSpan.FromHours(2), receipt.PurchasedAt.Offset);
-        Assert.Equal(4, receipt.Items.Count);
+        Assert.Equal(new DateTime(2026, 8, 4, 12, 51, 18), receipt.PurchasedAt.DateTime);
+
+        // Three articles off the printed receipt; the markdown line is a
+        // discount on one of them rather than a fourth item.
+        Assert.Equal(3, receipt.Items.Count);
         Assert.True(receipt.Reconciled);
-        Assert.Equal("4821", receipt.Payment?.CardLast4);
+        Assert.Equal("4321", receipt.Payment?.CardLast4);
         Assert.True(result.Complete);
         Assert.Equal("tickets-v2", result.Via);
 

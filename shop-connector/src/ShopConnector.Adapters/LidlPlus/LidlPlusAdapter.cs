@@ -195,30 +195,52 @@ public sealed class LidlPlusAdapter : IProviderAdapter
             var payment = ReceiptFactory.Payment();
             var total = summary.Total;
             var storeName = summary.StoreName;
+            var purchasedAt = summary.PurchasedAt;
 
             if (request.WantsItems)
             {
                 using var detail = await DetailAsync(ctx, session, settings, summary.Id, ct).ConfigureAwait(false);
+                var root = detail.RootElement;
 
-                // The detail document, whole. Every field name this parser
-                // reads is a CANDIDATE - the endpoints were confirmed from a
-                // reference implementation and the payload never was - so
-                // this is the only way anybody finds out which of them Lidl
-                // actually uses without spending another live sign-in.
-                if (request.WantsRaw) raw[summary.Id] = detail.RootElement.GetRawText();
+                // The detail document, whole, when asked for. Handing it back
+                // is how the line items below stopped being a guess.
+                if (request.WantsRaw) raw[summary.Id] = root.GetRawText();
 
-                items = LidlPlusTicketParser.ParseItems(detail.RootElement, _options);
-                payment = LidlPlusTicketParser.ParsePayment(detail.RootElement);
-                total = MoneyReader.Optional(detail.RootElement, _options.AmountUnit, total.Currency,
+                // CONFIRMED 2026-08-04: a v3 detail is
+                // "ticketType": "HTML" and carries NO line-item collection.
+                // The lines are in htmlPrintedReceipt - the paper receipt,
+                // marked up, with every article's facts on data attributes.
+                var printed = JsonAccess.StrOf(root, "htmlPrintedReceipt");
+
+                items = LidlPrintedReceipt.Items(printed, _options, total.Currency);
+                payment = LidlPrintedReceipt.Payment(printed, _options);
+
+                total = MoneyReader.Optional(root, _options.AmountUnit, total.Currency,
                     "ticket.detail.total", "totalAmount", "total") ?? total;
-                storeName = JsonAccess.StrOf(detail.RootElement, "storeName", "store", "storeCode") ?? storeName;
+
+                // CONFIRMED: the detail states a store OBJECT - id "NL0263",
+                // name "Delft" - and the old read asked for a string, so every
+                // receipt was named after the branch code. "Lidl Delft" is
+                // what the receipt itself prints at the top.
+                storeName = StoreName(root) ?? storeName;
+
+                // The detail's own timestamp, and it is the one to trust: it
+                // agrees with the card-terminal line the till printed
+                // ("04-10-2025 12:50" against a stated 12:51:18), whereas the
+                // list's put every receipt two hours later. It states a wall
+                // clock with no offset, so it is read in the store's country
+                // zone rather than the agent's.
+                if (JsonAccess.StrOf(root, "date") is { Length: > 0 } stamped)
+                {
+                    purchasedAt = ReceiptTime.Parse(stamped, zone, ProviderId, "ticket.detail.date");
+                }
             }
 
             receipts.Add(ReceiptFactory.Build(
                 ctx.SessionId,
                 summary.Id,
                 LidlPlusTicketParser.Merchant(storeName),
-                summary.PurchasedAt,
+                purchasedAt,
                 total,
                 payment,
                 items));
@@ -796,6 +818,23 @@ public sealed class LidlPlusAdapter : IProviderAdapter
         }
 
         return [.. collected.OrderByDescending(r => r.PurchasedAt)];
+    }
+
+    /// <summary>
+    /// The branch, as the receipt names it.
+    ///
+    /// CONFIRMED: <c>store</c> is an object with <c>id</c> ("NL0263") and
+    /// <c>name</c> ("Delft"). Reading it as a string gave the branch CODE,
+    /// which is what every Lidl receipt in the demo was titled with.
+    /// </summary>
+    private static string? StoreName(JsonElement detail)
+    {
+        if (JsonAccess.TryProp(detail, out var store, "store") && store.ValueKind == JsonValueKind.Object)
+        {
+            if (JsonAccess.StrOf(store, "name") is { Length: > 0 } named) return named;
+        }
+
+        return JsonAccess.StrOf(detail, "storeName", "storeCode");
     }
 
     private async Task<JsonDocument> DetailAsync(

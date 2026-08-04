@@ -9,13 +9,20 @@ namespace ShopConnector.Adapters.Tests;
 
 /// <summary>
 /// Lidl Plus's v2 list and v3 detail. The two endpoints sit on different API
-/// versions, which is not a typo and must not be "fixed"; the fixtures are
-/// recorded from both.
+/// versions, which is not a typo and must not be "fixed".
 ///
-/// The load-bearing behaviour here is the discount sign. Lidl states a
-/// discount POSITIVE, and the schema requires it negative so that summing is
-/// unconditional - get that wrong and every promotion-heavy shop is marked
-/// as failing reconciliation.
+/// The detail fixture was replaced on 2026-08-04 with the shape a real one
+/// has, and it is nothing like what was here before. There is no line-item
+/// collection at all - no itemsLine, no items, no lines, no discounts array.
+/// A v3 detail is "ticketType": "HTML" and carries the PAPER RECEIPT in
+/// htmlPrintedReceipt, with each article's facts on data attributes of the
+/// spans it is printed from.
+///
+/// The load-bearing case is now the weighed article. 0,850 kg of bananas at
+/// 1,79/kg is printed as 1,52, and 0.850 x 1.79 is 1.5215 - so a parser that
+/// multiplied instead of reading the printed total would put every receipt
+/// containing loose produce a cent out and fail reconciliation for a reason
+/// nobody could see on screen.
 /// </summary>
 public sealed class LidlPlusParsingTests
 {
@@ -68,76 +75,159 @@ public sealed class LidlPlusParsingTests
     }
 
     [Fact]
-    public void Detail_negates_a_positively_stated_discount()
+    public void The_printed_receipt_is_where_the_lines_are()
     {
-        using var document = Fixture.Doc(DetailFixture);
+        var items = Items();
 
-        var items = LidlPlusTicketParser.ParseItems(document.RootElement, Options);
+        Assert.Equal(3, items.Count);
+        Assert.Equal(["Bruin brood", "Halfvolle melk", "Bananen"], items.Select(i => i.Name));
 
-        Assert.Equal(4, items.Count);
-
-        Assert.Equal("Bio volle melk 1L", items[0].Name);
-        Assert.Equal(258, items[0].Total.Value);
-        Assert.Equal(2m, items[0].Quantity);
+        // A plain article: one of it, at the price printed beside it.
+        Assert.Equal(129, items[0].Total.Value);
+        Assert.Equal(1m, items[0].Quantity);
         Assert.Equal(129, items[0].UnitPrice?.Value);
-
-        // An empty discounts array is no discount, not a zero one.
         Assert.Null(items[0].Discount);
+    }
 
-        var discounted = items[1];
-        Assert.Equal("Kipfilet 500g", discounted.Name);
-        Assert.Equal(549, discounted.Total.Value);
+    /// <summary>
+    /// The case that decides whether this parser can be trusted at all.
+    ///
+    /// Lidl prints the weight and the price per kilo as attributes and the
+    /// LINE TOTAL as text. 0,850 x 1,79 = 1,5215, and the till charged 1,52 -
+    /// so the total has to be read rather than computed, or every shop with
+    /// loose produce in it lands a cent out and reconciliation fails.
+    /// </summary>
+    [Fact]
+    public void A_weighed_article_takes_the_total_the_till_printed()
+    {
+        var bananas = Assert.Single(Items(), i => i.Name == "Bananen");
 
-        var discount = discounted.Discount;
+        Assert.Equal(0.850m, bananas.Quantity);
+        Assert.Equal(179, bananas.UnitPrice?.Value);
+        Assert.Equal(152, bananas.Total.Value);
+
+        // The printed figure. For these numbers a computed one would agree -
+        // 0,850 x 1,79 is 1,5215, which rounds to the same 1,52 - so this
+        // assertion alone does not prove the total is READ. The test below
+        // does that.
+        Assert.Equal(152, bananas.Total.Value);
+    }
+
+    /// <summary>
+    /// The line total is READ, never recomputed from the attributes.
+    ///
+    /// Constructed rather than captured, because the receipts seen so far
+    /// happen not to distinguish the two: 0,850 x 1,79 rounds to the printed
+    /// 1,52 either way. That is luck, not a guarantee. Whatever the till
+    /// printed is what the customer was actually charged, and how it got
+    /// there - rounding, truncation, a promotion applied per kilo - is its
+    /// business. A parser that multiplied would silently disagree with the
+    /// bank statement the day the two differ, and reconciliation would fail
+    /// pointing at nothing.
+    /// </summary>
+    [Fact]
+    public void The_line_total_is_the_printed_one_even_when_the_attributes_disagree()
+    {
+        // 0,500 kg at 3,00 would compute to 1,50. The till printed 1,49.
+        const string printed =
+            """
+            <span id="purchase_list_line_2" class="article" data-art-id="0009999" data-art-description="Druiven" data-art-quantity="0,500" data-unit-price="3,00" data-tax-type="B">Druiven</span><span id="purchase_list_line_2" class="article" data-art-id="0009999" data-art-description="Druiven" data-art-quantity="0,500" data-unit-price="3,00" data-tax-type="B">   </span><span id="purchase_list_line_2" class="article" data-art-id="0009999" data-art-description="Druiven" data-art-quantity="0,500" data-unit-price="3,00" data-tax-type="B">1,49</span>
+            """;
+
+        var item = Assert.Single(LidlPrintedReceipt.Items(printed, Options, "EUR"));
+
+        Assert.Equal(149, item.Total.Value);
+        Assert.Equal(0.500m, item.Quantity);
+        Assert.Equal(300, item.UnitPrice?.Value);
+
+        // The number a parser doing the arithmetic itself would have produced.
+        Assert.NotEqual(150, item.Total.Value);
+    }
+
+    /// <summary>
+    /// A markdown is printed on its own line under the article it reduces,
+    /// with no attributes of its own - so it has to be attached to the article
+    /// above it or the items stop summing to the stated total.
+    /// </summary>
+    [Fact]
+    public void A_markdown_line_attaches_to_the_article_it_was_printed_under()
+    {
+        var milk = Assert.Single(Items(), i => i.Name == "Halfvolle melk");
+
+        var discount = milk.Discount;
         Assert.NotNull(discount);
 
-        // Lidl states "0,50"; the schema requires it negative.
-        Assert.Equal(-50, discount.Amount.Value);
-        Assert.Equal("Lidl Plus korting", discount.Label);
+        // Negative, which is what makes summing unconditional.
+        Assert.Equal(-20, discount.Amount.Value);
+        Assert.Equal("In prijs verlaagd", discount.Label);
+
+        // And the line total stays as printed: the discount carries the
+        // difference rather than being baked into the price.
+        Assert.Equal(115, milk.Total.Value);
+
+        // It belongs to the milk and to nothing else.
+        Assert.All(Items().Where(i => i.Name != "Halfvolle melk"), i => Assert.Null(i.Discount));
     }
 
     [Fact]
-    public void Detail_takes_its_currency_from_the_object_the_provider_states_it_in()
+    public void The_tender_block_states_the_method_and_the_card_tail()
     {
         using var document = Fixture.Doc(DetailFixture);
+        var printed = document.RootElement.GetProperty("htmlPrintedReceipt").GetString();
 
-        var items = LidlPlusTicketParser.ParseItems(document.RootElement, Options);
+        var payment = LidlPrintedReceipt.Payment(printed, Options);
 
-        // Lidl nests it as {"code": "EUR", "symbol": "€"}. The symbol is never
-        // read: "$" is at least four different currencies.
-        Assert.All(items, item => Assert.Equal("EUR", item.Total.Currency));
-    }
-
-    [Fact]
-    public void Detail_payment_states_the_card_tail_and_leaves_the_iban_null()
-    {
-        using var document = Fixture.Doc(DetailFixture);
-
-        var payment = LidlPlusTicketParser.ParsePayment(document.RootElement);
-
+        // "Bankpas" is what a Dutch till prints for a debit card, and the
+        // mapping every other adapter here uses does not know the word.
         Assert.Equal("card", payment.Method);
-        Assert.Equal("4821", payment.CardLast4);
+        Assert.Equal("4321", payment.CardLast4);
         Assert.Null(payment.IbanTail);
     }
 
     [Fact]
     public void Items_net_of_discounts_reconcile_against_the_stated_total()
     {
-        using var list = Fixture.Doc(ListFixture);
         using var detail = Fixture.Doc(DetailFixture);
 
-        var ticket = LidlPlusTicketParser.ParseList(list.RootElement, Options, Dutch)[0];
-        var items = LidlPlusTicketParser.ParseItems(detail.RootElement, Options);
+        var items = Items();
+        var total = detail.RootElement.GetProperty("totalAmount").GetDecimal();
 
-        // 258 + 549 + 119 + 551 - 50 = 1427.
+        // 1,29 + 1,15 - 0,20 + 1,52 = 3,76.
         var sum = items.Sum(i => i.Total.Value + (i.Discount?.Amount.Value ?? 0));
-        Assert.Equal(ticket.Total.Value, sum);
+        Assert.Equal(376, sum);
+        Assert.Equal((long)(total * 100), sum);
 
         var receipt = ReceiptFactory.Build(
-            "ses_test", ticket.Id, LidlPlusTicketParser.Merchant(ticket.StoreName),
-            ticket.PurchasedAt, ticket.Total, LidlPlusTicketParser.ParsePayment(detail.RootElement), items);
+            "ses_test", "22000263862026080411111", LidlPlusTicketParser.Merchant("Testdorp"),
+            DateTimeOffset.UtcNow, new Connector.Kit.Normalization.Money(sum, "EUR"),
+            LidlPrintedReceipt.Payment(
+                detail.RootElement.GetProperty("htmlPrintedReceipt").GetString(), Options),
+            items);
 
         Assert.True(receipt.Reconciled);
+    }
+
+    /// <summary>
+    /// The detail states a store OBJECT - id "NL0263", name "Delft" - and the
+    /// old read asked for a string, so every receipt in the demo was titled
+    /// with the branch CODE. The receipt itself prints "Lidl Delft".
+    /// </summary>
+    [Fact]
+    public void The_store_is_named_rather_than_numbered()
+    {
+        using var document = Fixture.Doc(DetailFixture);
+        var store = document.RootElement.GetProperty("store");
+
+        Assert.Equal("Testdorp", store.GetProperty("name").GetString());
+        Assert.Equal("NL0999", store.GetProperty("id").GetString());
+    }
+
+    private static IReadOnlyList<Connector.Kit.Normalization.ReceiptItem> Items()
+    {
+        using var document = Fixture.Doc(DetailFixture);
+        var printed = document.RootElement.GetProperty("htmlPrintedReceipt").GetString();
+
+        return LidlPrintedReceipt.Items(printed, Options, "EUR");
     }
 
     // ---- defensive parsing -------------------------------------------------
@@ -210,20 +300,24 @@ public sealed class LidlPlusParsingTests
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
     }
 
+    /// <summary>
+    /// A line with no article attributes is not an article. Headers,
+    /// separators and the totals block all sit in the same markup, and a
+    /// parser that took any line with a number on it would emit "Totaal" as
+    /// something somebody bought.
+    /// </summary>
     [Fact]
-    public void A_nameless_item_line_is_skipped_rather_than_emitted_unnamed()
+    public void Only_lines_carrying_an_article_id_become_items()
     {
-        var root = Fixture.Object(DetailFixture);
-        root["itemsLine"]![0]!.AsObject().Remove("name");
+        var items = Items();
 
-        using var document = Fixture.Reparse(root);
+        Assert.DoesNotContain(items, i => i.Name.Contains("Totaal", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(items, i => i.Name.Contains("Aantal", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(items, i => i.Name.Contains("OMSCHRIJVING", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(items, i => i.Name.Contains("Lidl", StringComparison.OrdinalIgnoreCase));
 
-        var items = LidlPlusTicketParser.ParseItems(document.RootElement, Options);
-
-        // The receipt then fails reconciliation rather than showing a blank
-        // product, which is the honest outcome: something is missing and the
-        // consumer is told so.
-        Assert.Equal(3, items.Count);
-        Assert.DoesNotContain(items, i => string.IsNullOrWhiteSpace(i.Name));
+        // And the markdown line is a discount rather than a fourth item.
+        Assert.DoesNotContain(items, i => i.Name.Contains("verlaagd", StringComparison.OrdinalIgnoreCase));
     }
+
 }
