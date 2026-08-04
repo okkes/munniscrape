@@ -22,6 +22,14 @@
   <Folder Name="/demo-client/src/">
     <Project Path="demo-client/src/DemoClient.Web/DemoClient.Web.csproj" />
   </Folder>
+  <Folder Name="/registry-connector/" />
+  <Folder Name="/registry-connector/src/">
+    <Project Path="registry-connector/src/RegistryConnector.Adapters/RegistryConnector.Adapters.csproj" />
+    <Project Path="registry-connector/src/RegistryConnector.Api/RegistryConnector.Api.csproj" />
+  </Folder>
+  <Folder Name="/registry-connector/tests/">
+    <Project Path="registry-connector/tests/RegistryConnector.Adapters.Tests/RegistryConnector.Adapters.Tests.csproj" />
+  </Folder>
   <Folder Name="/shop-connector/" />
   <Folder Name="/shop-connector/src/">
     <Project Path="shop-connector/src/ShopConnector.Adapters/ShopConnector.Adapters.csproj" />

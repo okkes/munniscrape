@@ -249,6 +249,7 @@ export function records(shape, rows) {
     case 'receipt': return h('ul', { class: 'records' }, rows.map(receipt));
     case 'transaction': return transactions(rows);
     case 'account': return h('ul', { class: 'records' }, rows.map(account));
+    case 'credit_registration': return h('ul', { class: 'records' }, rows.map(creditRegistration));
     default: return h('ul', { class: 'records' }, rows.map(unknownRecord));
   }
 }
@@ -274,6 +275,51 @@ function totalNote(reconciled, derived) {
 
   return note('The line items and discounts do not add up to the stated total. ',
     'The connector handed it over anyway, flagged, instead of dropping it or guessing.');
+}
+
+/**
+ * One credit, as a register states it.
+ *
+ * Not a transaction, and it does not pretend to be one: there is no moment it
+ * happened at and no money that moved. What it has is a standing amount, a
+ * lender, and whether it is still running.
+ */
+function creditRegistration(row) {
+  const amount = row.amount ?? {};
+  const ended = row.status === 'ended';
+
+  return h('li', { class: `record record-credit ${ended ? 'is-ended' : ''}`.trim() },
+    h('div', { class: 'record-head' },
+      h('div', {},
+        h('strong', {}, row.creditor ?? 'Unknown creditor'),
+        // The register's own words, not our enum. Somebody checking this
+        // against a letter from BKR is looking for "Aflopend krediet", and a
+        // label we mapped to `instalment` would not match what they hold.
+        row.kind_label ? h('span', { class: 'muted' }, ` ${row.kind_label}`) : null,
+        h('div', { class: 'muted small' }, creditDates(row))),
+      h('div', { class: 'record-amount' },
+        h('span', { class: 'amount' }, money(amount)),
+        badge(ended ? 'ended' : 'running', ended ? 'neutral' : 'info'),
+        // Never softened, never summarised, never hidden behind a tooltip.
+        // An arrears code is the single most consequential thing a credit
+        // register says about somebody, and what it means for their mortgage
+        // application is not this app's judgement to make.
+        row.arrears_code ? badge(row.arrears_code, 'bad') : null)),
+    row.monthly_amount
+      ? h('div', { class: 'muted small' }, `${money(row.monthly_amount)} per month`)
+      : null);
+}
+
+function creditDates(row) {
+  const from = row.started_on;
+  const to = row.ends_on;
+
+  if (from && to) return `${from} to ${to}`;
+  if (from) return `since ${from}`;
+
+  // Revolving credit states neither, and saying so beats an empty line that
+  // reads as a field we failed to fetch.
+  return 'no dates stated';
 }
 
 function receipt(row) {

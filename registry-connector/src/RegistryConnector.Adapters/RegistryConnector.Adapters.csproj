@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The registry providers: places that hold an official record ABOUT you
+    rather than a stream of things you did. BKR is the first; a pension
+    overview or a student-debt balance is the same shape.
+
+    Nothing here knows about HTTP routing, the database, or the job queue -
+    an adapter sees only IJobContext.
+  -->
+  <PropertyGroup>
+    <RootNamespace>RegistryConnector.Adapters</RootNamespace>
+    <AssemblyName>RegistryConnector.Adapters</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\connector-kit\src\Connector.Kit\Connector.Kit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RegistryConnector.Adapters.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Embedded so a parse test needs no file paths and cannot drift from the
+      assembly it tests, and copied so an operator diffing a live capture
+      against the recorded shape can just open the file.
+    -->
+    <None Remove="Fixtures\**\*.json" />
+    <EmbeddedResource Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

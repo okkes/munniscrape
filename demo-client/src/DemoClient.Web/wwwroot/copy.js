@@ -58,6 +58,10 @@ const KEYS = {
   'connect.challenge.captcha_in_browser':
     'Solve the captcha in the browser window we opened for you. There is nothing to type here - once the provider lets us through, this page moves on by itself.',
   'connect.challenge.sms_code': 'Enter the code we just texted you.',
+  // A registry asks for this on EVERY sync, not only at connect - which is
+  // why the wording is about the app rather than about signing in.
+  'connect.challenge.authenticator_code':
+    'Open your authenticator app and type the six digits it is showing for this account.',
 
   // Lidl Plus, and the one challenge in this file whose instructions are
   // mostly about a browser error message.
@@ -241,7 +245,7 @@ const VOCAB = {
     // the page as a video rather than as their own sign-in.
     live_view: 'Sign in on the provider\'s own page',
   },
-  service_kind: { bank: 'Banking', store: 'Shopping' },
+  service_kind: { bank: 'Banking', store: 'Shopping', registry: 'Registries' },
   account_type: {
     current: 'Current account',
     savings: 'Savings',
