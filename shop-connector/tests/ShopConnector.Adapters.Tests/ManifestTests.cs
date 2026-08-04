@@ -108,10 +108,14 @@ public sealed class ManifestTests
     // bol could not until its shape stopped being a guess about markup.
     [InlineData("jumbo", true)]
     [InlineData("bol", true)]
-    // Still no: these build a record from more than one call, or from a page,
-    // and there is no single document that IS the answer.
+    // Lidl's v3 detail IS the answer for a receipt, and every field name its
+    // parser reads is a candidate rather than a confirmed one - so handing the
+    // document back is how anybody finds out which of them Lidl uses without
+    // spending another live sign-in.
+    [InlineData("lidl", true)]
+    // Still no: this builds a record from more than one call, and there is no
+    // single document that IS the answer.
     [InlineData("picnic", false)]
-    [InlineData("lidl", false)]
     public void Raw_is_offered_only_where_a_provider_document_exists_to_offer(
         string providerId, bool offersRaw)
     {

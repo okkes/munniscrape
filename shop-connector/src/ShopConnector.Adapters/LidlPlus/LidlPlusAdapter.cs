@@ -118,9 +118,13 @@ public sealed class LidlPlusAdapter : IProviderAdapter
         // forgotten, which is precisely how it was missing before.
         var pkce = PkceChallenge.Create();
 
-        await page.GotoAsync(AuthorizeUrl(pkce, settings), ct).ConfigureAwait(false);
+        // Held, because the failure path re-opens it: a page carrying Lidl's
+        // "something went wrong" box is not what anybody should be handed.
+        var authorizeUrl = AuthorizeUrl(pkce, settings);
 
-        var redirect = await ReachRedirectAsync(ctx, page, watcher, username, password, ct)
+        await page.GotoAsync(authorizeUrl, ct).ConfigureAwait(false);
+
+        var redirect = await ReachRedirectAsync(ctx, page, watcher, username, password, authorizeUrl, ct)
             .ConfigureAwait(false);
 
         var code = AuthorizationCode(redirect);
@@ -178,6 +182,10 @@ public sealed class LidlPlusAdapter : IProviderAdapter
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var receipts = new List<Receipt>(selected.Count);
 
+        // Keyed by the same external id the receipts carry, which is how a
+        // consumer pairs the two back up.
+        var raw = new Dictionary<string, string>(StringComparer.Ordinal);
+
         foreach (var summary in selected)
         {
             ct.ThrowIfCancellationRequested();
@@ -191,6 +199,13 @@ public sealed class LidlPlusAdapter : IProviderAdapter
             if (request.WantsItems)
             {
                 using var detail = await DetailAsync(ctx, session, settings, summary.Id, ct).ConfigureAwait(false);
+
+                // The detail document, whole. Every field name this parser
+                // reads is a CANDIDATE - the endpoints were confirmed from a
+                // reference implementation and the payload never was - so
+                // this is the only way anybody finds out which of them Lidl
+                // actually uses without spending another live sign-in.
+                if (request.WantsRaw) raw[summary.Id] = detail.RootElement.GetRawText();
 
                 items = LidlPlusTicketParser.ParseItems(detail.RootElement, _options);
                 payment = LidlPlusTicketParser.ParsePayment(detail.RootElement);
@@ -217,6 +232,7 @@ public sealed class LidlPlusAdapter : IProviderAdapter
             RefreshedMaterial = session.RefreshedMaterial(ctx.Material),
             Complete = complete,
             Via = "tickets-v2",
+            Raw = raw,
         };
     }
 
@@ -322,7 +338,7 @@ public sealed class LidlPlusAdapter : IProviderAdapter
     /// </summary>
     private async Task<string> ReachRedirectAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher,
-        string? username, string? password, CancellationToken ct)
+        string? username, string? password, string authorizeUrl, CancellationToken ct)
     {
         ctx.Progress(JobStep.Authenticating);
 
@@ -355,10 +371,22 @@ public sealed class LidlPlusAdapter : IProviderAdapter
             when (ex.Code is ErrorCode.BlockedByProvider or ErrorCode.ProviderChanged)
         {
             // The scoring verdict arrives as a bounce back to the identifier
-            // screen with a generic notice - indistinguishable, from here,
-            // from Lidl having moved its markup. Both are answered the same
-            // way: give the page to the person whose account it is. This is
-            // the branch the 2026-07-28 live attempt died in.
+            // screen with a generic notice - "Er is iets mis gegaan. Probeer
+            // het later nog eens." - indistinguishable, from here, from Lidl
+            // having moved its markup. Both are answered the same way: give
+            // the page to the person whose account it is. This is the branch
+            // the 2026-07-28 live attempt died in.
+            //
+            // Reloaded first, and only on THIS path. Handing somebody a page
+            // already showing a red failure box asks them to work out whether
+            // the thing they are being handed is broken - and it is not, it is
+            // a page that scored our typing and would accept theirs. A clean
+            // one costs a navigation and removes the question. The wall path
+            // above deliberately does NOT reload: nothing has gone wrong
+            // there, and the username this adapter just typed is worth
+            // keeping.
+            await page.GotoAsync(authorizeUrl, ct).ConfigureAwait(false);
+
             return await LiveRedirectAsync(ctx, page, watcher, ct).ConfigureAwait(false);
         }
     }

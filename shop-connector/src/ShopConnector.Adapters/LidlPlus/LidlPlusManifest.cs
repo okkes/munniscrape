@@ -184,7 +184,7 @@ internal static class LidlPlusManifest
                 [
                     new ParamSpec { Key = "since", Type = ParamType.Date, Required = true },
                     new ParamSpec { Key = "until", Type = ParamType.Date },
-                    new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items"], Multi = true },
+                    new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items", "raw"], Multi = true },
                 ],
                 MaxHistoryDays = 730,
                 TypicalDurationSeconds = 30,
