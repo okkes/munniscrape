@@ -80,13 +80,54 @@ public sealed class LiveOriginTests
         Assert.Null(LiveOrigin.Normalize(url));
 
     /// <summary>
-    /// Bounded before parsing. A host is 253 characters at most by DNS, so this
-    /// is not a hostname and is not worth handing to a URL parser.
+    /// A host is 253 characters at most by DNS, so a name past that is not a
+    /// hostname and the ORIGIN it would produce is refused.
     /// </summary>
     [Fact]
-    public void An_absurdly_long_url_is_refused_rather_than_truncated()
+    public void An_absurdly_long_host_is_refused_rather_than_truncated()
     {
         var url = "https://" + new string('a', LiveOrigin.MaxLength) + ".nl";
+
+        Assert.Null(LiveOrigin.Normalize(url));
+    }
+
+    /// <summary>
+    /// A long QUERY is not a long host, and this is the case that was quietly
+    /// broken: the length cap was applied to the whole URL before parsing, so
+    /// any page reached through an OAuth authorize call lost its origin.
+    ///
+    /// Lidl's is the real one. A client id, a custom-scheme redirect, five
+    /// scopes, a PKCE challenge and a nonce clear 300 characters without being
+    /// remotely unusual - and the result was a photograph of a password box
+    /// captioned "nobody told us whose page this is", which is the exact
+    /// failure this chip exists to prevent.
+    /// </summary>
+    [Fact]
+    public void A_long_query_string_does_not_cost_the_page_its_name()
+    {
+        var url =
+            "https://accounts.lidl.com/connect/authorize"
+            + "?client_id=LidlPlusNativeClient"
+            + "&response_type=code"
+            + "&redirect_uri=com.lidlplus.app%3A%2F%2Fcallback"
+            + "&scope=openid%20profile%20offline_access%20lpprofile%20lpapis"
+            + "&code_challenge=" + new string('a', 43)
+            + "&code_challenge_method=S256"
+            + "&nonce=" + new string('b', 32)
+            + "&state=" + new string('c', 32)
+            + "&Country=NL&language=nl-NL";
+
+        Assert.True(url.Length > LiveOrigin.MaxLength, "the URL under test has to be a long one");
+
+        // The origin is short even though the URL is not, and the origin is
+        // the only part anybody is shown.
+        Assert.Equal("https://accounts.lidl.com", LiveOrigin.Normalize(url));
+    }
+
+    [Fact]
+    public void A_url_far_past_any_real_one_is_still_refused_before_parsing()
+    {
+        var url = "https://example.test/?q=" + new string('a', LiveOrigin.MaxUrlLength);
 
         Assert.Null(LiveOrigin.Normalize(url));
     }

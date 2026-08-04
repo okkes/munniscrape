@@ -89,7 +89,16 @@ public sealed class LidlPlusAdapterTests
         // The casing of "iOs" is the provider's, and is confirmed.
         Assert.All(handler.Requests, request =>
         {
-            Assert.Equal("999.99.9", request.Header("App-Version"));
+            // NOT "999.99.9". Lidl's edge drops the TCP connection on that
+            // exact string - measured live on 2026-08-03, one header at a
+            // time - because it is the sentinel the well-known scraper library
+            // sends. Nothing else about the value is checked: 999.99.99 and
+            // 99.99.9 both reach authentication and answer 401.
+            //
+            // It surfaced as "request timed out" sixty seconds later, naming
+            // nothing, on a provider whose login had just succeeded.
+            Assert.NotEqual("999.99.9", request.Header("App-Version"));
+            Assert.Equal("15.20.3", request.Header("App-Version"));
             Assert.Equal("iOs", request.Header("Operating-System"));
             Assert.Equal("com.lidl.eci.lidl.plus", request.Header("App"));
             Assert.Equal("NL", request.Header("Country"));

@@ -276,6 +276,24 @@ public static class LiveOrigin
     public const int MaxLength = 300;
 
     /// <summary>
+    /// How long an input URL may be before it is not worth parsing.
+    ///
+    /// Separate from <see cref="MaxLength"/>, and the separation is the whole
+    /// point. <see cref="MaxLength"/> bounds the ORIGIN, which is a scheme and
+    /// a hostname and cannot honestly be long. It used to bound the input too,
+    /// and that silently cost the origin on exactly the pages that need it
+    /// most: an OAuth authorize URL carries a client id, a redirect, a scope
+    /// list, a PKCE challenge and a nonce, and sails past 300 characters
+    /// without being remotely suspicious. Lidl's is one, so a person was shown
+    /// a photograph of a password box captioned "nobody told us whose page
+    /// this is" - the failure this chip exists to prevent.
+    ///
+    /// The cap that remains is only to stop something absurd reaching the URL
+    /// parser; browsers themselves stop caring somewhere around here.
+    /// </summary>
+    public const int MaxUrlLength = 8_192;
+
+    /// <summary>
     /// The displayable origin of an absolute URL, or null when there is not one
     /// worth displaying. Null must reach the human as "unknown"; the one thing
     /// this may never do is return something reassuring about a page it could
@@ -293,7 +311,7 @@ public static class LiveOrigin
     /// </summary>
     public static string? Normalize(string? url)
     {
-        if (string.IsNullOrWhiteSpace(url) || url.Length > MaxLength) return null;
+        if (string.IsNullOrWhiteSpace(url) || url.Length > MaxUrlLength) return null;
         if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)) return null;
         if (parsed.Scheme is not ("http" or "https")) return null;
         if (string.IsNullOrEmpty(parsed.IdnHost)) return null;

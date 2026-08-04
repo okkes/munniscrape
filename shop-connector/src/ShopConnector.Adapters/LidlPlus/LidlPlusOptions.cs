@@ -47,7 +47,32 @@ public sealed record LidlPlusOptions
 
     public string TicketDetailPathTemplate { get; init; } = "/api/v3/{country}/tickets/{id}";
 
-    public string AppVersionHeader { get; init; } = "999.99.9";
+    /// <summary>
+    /// CONFIRMED live on 2026-08-03, and the single value that made every
+    /// Lidl fetch fail.
+    ///
+    /// This used to be <c>999.99.9</c>, taken from the public reference
+    /// implementation. Lidl's edge now drops the TCP connection on that exact
+    /// string - not a 403, no response at all, which surfaced here as
+    /// "request timed out" sixty seconds later and named nothing.
+    ///
+    /// It is that string specifically and not implausible versions in general.
+    /// Measured against the live endpoint, one header at a time:
+    /// <code>
+    ///   App-Version: 999.99.9   -> connection dropped
+    ///   App-Version: 999.99.99  -> 401
+    ///   App-Version: 99.99.9    -> 401
+    ///   App-Version: 15.20.3    -> 401
+    /// </code>
+    /// A 401 is the right answer to a bogus token, so every other value gets
+    /// as far as authentication. The sentinel is blocklisted because it is
+    /// what the well-known scraper library sends.
+    ///
+    /// The value is therefore not validated by Lidl, only screened. A real
+    /// release number is used rather than another sentinel: the next value
+    /// somebody blocklists will be whichever one the scrapers converge on.
+    /// </summary>
+    public string AppVersionHeader { get; init; } = "15.20.3";
 
     /// <summary>Confirmed casing. The API routes on it; it is not a disguise.</summary>
     public string OperatingSystemHeader { get; init; } = "iOs";

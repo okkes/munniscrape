@@ -37,6 +37,10 @@ const KEYS = {
   'connect.field.username': 'Username',
   'connect.field.password': 'Password',
   'connect.field.email': 'Email address',
+  // One box that takes either, which is what Lidl's page really has. Naming
+  // only one of the two shapes is how somebody who signs in every week ends
+  // up unable to work out what to type.
+  'connect.field.email_or_phone': 'Email address or mobile number',
   'connect.step.credentials': 'Your sign-in details',
   'connect.step.redirect': 'Sign in on the provider\'s own site',
 
