@@ -25,6 +25,7 @@
   <Folder Name="/registry-connector/" />
   <Folder Name="/registry-connector/src/">
     <Project Path="registry-connector/src/RegistryConnector.Adapters/RegistryConnector.Adapters.csproj" />
+    <Project Path="registry-connector/src/RegistryConnector.Agent/RegistryConnector.Agent.csproj" />
     <Project Path="registry-connector/src/RegistryConnector.Api/RegistryConnector.Api.csproj" />
   </Folder>
   <Folder Name="/registry-connector/tests/">

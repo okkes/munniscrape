@@ -1,0 +1,92 @@
+# Shopping Connector agent - the data plane.
+#
+# Build context is the REPO ROOT:
+#   docker build -f registry-connector/src/RegistryConnector.Agent/Dockerfile .
+#
+# This is the ONLY image with browser binaries and the only one that ever
+# holds a plaintext credential. Two properties follow, and both are
+# enforced here rather than by convention:
+#
+#   * It gets NO database credential. An agent leases work over HTTP and
+#     has no route to Postgres at all (see deploy/docker-compose.yml, where
+#     it is not even on the data network).
+#   * It publishes NO port. Every call is outbound from the agent, which is
+#     what lets one run behind NAT on a residential line or on a user's own
+#     machine without an inbound hole - and a residential line is exactly
+#     what the retail providers' bot protection is testing for.
+#
+# amd64 only in CI: Chromium under Playwright on arm64 is unverified and is
+# a named open question in the platform design (s12.2). Build it here if
+# you want to try - nothing in this file is arch-specific except the RID
+# below, which exists for the reason in the publish comment.
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Restore from project files alone, so editing a .cs file does not
+# re-resolve the package graph. Any new project in this image's reference
+# chain has to be added here as well.
+COPY Directory.Build.props Directory.Packages.props ./
+COPY connector-kit/src/Connector.Kit/Connector.Kit.csproj connector-kit/src/Connector.Kit/
+COPY connector-kit/src/Connector.Kit.Agent/Connector.Kit.Agent.csproj connector-kit/src/Connector.Kit.Agent/
+COPY registry-connector/src/RegistryConnector.Adapters/RegistryConnector.Adapters.csproj registry-connector/src/RegistryConnector.Adapters/
+COPY registry-connector/src/RegistryConnector.Agent/RegistryConnector.Agent.csproj registry-connector/src/RegistryConnector.Agent/
+RUN dotnet restore registry-connector/src/RegistryConnector.Agent/RegistryConnector.Agent.csproj -r linux-x64
+
+COPY connector-kit/src/ connector-kit/src/
+COPY registry-connector/src/ registry-connector/src/
+
+# Self-contained on purpose. The Playwright image is here for BROWSERS;
+# tying the agent to whatever .NET version that image happens to ship would
+# couple an agent release to Playwright's base-image cadence, and a
+# mismatch is a runtime failure on a residential box nobody is watching.
+RUN dotnet publish registry-connector/src/RegistryConnector.Agent/RegistryConnector.Agent.csproj \
+    -c Release -r linux-x64 --self-contained true -o /app --no-restore \
+    -p:ContinuousIntegrationBuild=true
+
+# Tag tracks the Microsoft.Playwright version in Directory.Packages.props.
+# The driver and the browser bundles are versioned together; a drift
+# between them fails at launch, not at build.
+FROM mcr.microsoft.com/playwright/dotnet:v1.61.0-noble
+
+# The section is ConnectorAgent and the properties are the full
+# ...Directory names. These were Agent__ProfileRoot and Agent__WorkRoot,
+# which bound to nothing: the agent silently used a home-directory default
+# while the compose file dutifully mounted volumes at /profiles and /work
+# that nothing ever wrote to.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
+    ConnectorAgent__ProfileRootDirectory=/profiles \
+    ConnectorAgent__WorkRootDirectory=/work \
+    ConnectorAgent__StateFilePath=/state/agent-state.json
+
+ARG BUILD_NUMBER=0
+ENV BUILD_NUMBER=${BUILD_NUMBER}
+
+LABEL org.opencontainers.image.title="registry-connector-agent" \
+      org.opencontainers.image.description="Shopping Connector agent - leases jobs, drives adapters, relays challenges" \
+      org.opencontainers.image.source="https://github.com/okkes/munniscrape"
+
+# /profiles is the T4 persistent-profile store and the one directory that
+# must survive a restart - it holds a logged-in browser session on hardware
+# the user controls. /work is scratch for a single job and is emptied when
+# it ends, including on failure. /state holds the enrollment: an agent that
+# loses it comes back as a stranger and needs a fresh one-time code.
+RUN mkdir -p /profiles /work /state /app && chown -R pwuser /profiles /work /state /app
+
+WORKDIR /app
+COPY --from=build --chown=pwuser /app .
+
+# Starts Xvfb so the browser can run genuinely headed. See the script for
+# why that is a correctness fix and not a disguise.
+#
+# Root-owned and read-only: this runs before the agent does, so a process
+# that could rewrite it could run anything it liked as the next restart.
+# pwuser needs to execute it, never to change it.
+COPY deploy/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
+RUN chmod 0555 /usr/local/bin/agent-entrypoint.sh
+
+# pwuser ships with the Playwright image and owns the browser bundles. A
+# browser rendering a hostile page must never be root.
+USER pwuser
+ENTRYPOINT ["/usr/local/bin/agent-entrypoint.sh", "./RegistryConnector.Agent"]

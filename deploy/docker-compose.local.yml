@@ -251,7 +251,7 @@ services:
     <<: *agent-common
     build:
       context: ..
-      dockerfile: shop-connector/src/ShopConnector.Agent/Dockerfile
+      dockerfile: registry-connector/src/RegistryConnector.Agent/Dockerfile
     environment:
       <<: *agent-env
       ConnectorAgent__AgentName: local-registry
