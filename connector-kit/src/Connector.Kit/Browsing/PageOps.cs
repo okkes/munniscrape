@@ -2,7 +2,7 @@ using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
 using Microsoft.Playwright;
 
-namespace ShopConnector.Adapters.Support;
+namespace Connector.Kit.Browsing;
 
 /// <summary>
 /// Selector work, written to survive a redesign.
@@ -14,7 +14,7 @@ namespace ShopConnector.Adapters.Support;
 /// <see cref="ErrorCode.ProviderChanged"/> with the list in the detail, so
 /// the next breakage arrives already diagnosed.
 /// </summary>
-internal static class PageOps
+public static class PageOps
 {
     public static async Task<IElementHandle> RequireAsync(
         IPage page, IReadOnlyList<string> selectors, string providerId, string what, int timeoutMs, CancellationToken ct)
@@ -36,7 +36,7 @@ internal static class PageOps
     /// Albert Heijn attempt. One predicate, used everywhere, so the next
     /// candidate list cannot get it wrong again.
     /// </summary>
-    internal static bool IsSelectorMiss(Exception ex) =>
+    public static bool IsSelectorMiss(Exception ex) =>
         ex is PlaywrightException or System.TimeoutException;
 
     /// <summary>
@@ -157,7 +157,7 @@ internal static class PageOps
 }
 
 /// <summary>What a frame currently has in it. Only <c>Pending</c> is worth waiting on.</summary>
-internal enum DrawState
+public enum DrawState
 {
     /// <summary>Still arriving, or nothing there yet.</summary>
     Pending,

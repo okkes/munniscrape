@@ -15,6 +15,19 @@
 
   <ItemGroup>
     <!--
+      The browser-login seam - ILoginPage, IRedirectWaiter and their Playwright
+      implementations - moved into the kit when the registry connector needed
+      it too. Nothing about driving a sign-in page is shop-specific, and a
+      second copy would have been the third place a selector bug could hide.
+
+      Imported project-wide rather than edited into thirteen files: the types
+      did not change, only where they live.
+    -->
+    <Using Include="Connector.Kit.Browsing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
       Parsers are internal because they are not a contract - only the
       adapters and the fixture catalogue are. The offline suite still needs
       to reach them: a parse test that has to build an HTTP stub to check a

@@ -2,10 +2,10 @@ using Connector.Kit.Challenges;
 using Connector.Kit.Manifests;
 using Microsoft.Playwright;
 
-namespace ShopConnector.Adapters.Support;
+namespace Connector.Kit.Browsing;
 
 /// <summary>An element that matched, and the box the redactor may crop to.</summary>
-internal sealed record PageMatch(CropRegion? Crop);
+public sealed record PageMatch(CropRegion? Crop);
 
 /// <summary>
 /// The seam.
@@ -25,7 +25,7 @@ internal sealed record PageMatch(CropRegion? Crop);
 /// itself. <see cref="PlaywrightLoginPage"/> is the only part a live run
 /// exercises that a test cannot.
 /// </summary>
-internal interface ILoginPage
+public interface ILoginPage
 {
     /// <summary>The page's current URL. Quoted in diagnostics, never as a credential.</summary>
     string Url { get; }
@@ -92,7 +92,7 @@ internal interface ILoginPage
 /// <summary>
 /// The live page, driven through Playwright.
 /// </summary>
-internal sealed class PlaywrightLoginPage : ILoginPage
+public sealed class PlaywrightLoginPage : ILoginPage
 {
     /// <summary>
     /// Blanks the matched inputs everywhere on the page, shadow roots

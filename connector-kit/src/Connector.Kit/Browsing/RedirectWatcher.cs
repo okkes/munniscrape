@@ -1,6 +1,6 @@
 using Microsoft.Playwright;
 
-namespace ShopConnector.Adapters.Support;
+namespace Connector.Kit.Browsing;
 
 /// <summary>
 /// The one signal that says a native-client OAuth login worked.
@@ -10,7 +10,7 @@ namespace ShopConnector.Adapters.Support;
 /// hangs, and it is unreachable offline while it is bolted to a live page's
 /// events.
 /// </summary>
-internal interface IRedirectWaiter
+public interface IRedirectWaiter
 {
     /// <summary>
     /// The captured URL, or null when the wait ran out. Null is not a
@@ -37,7 +37,7 @@ internal interface IRedirectWaiter
 /// attached afterwards is a race against a redirect that frequently arrives
 /// first.
 /// </summary>
-internal sealed class RedirectWatcher : IRedirectWaiter, IDisposable
+public sealed class RedirectWatcher : IRedirectWaiter, IDisposable
 {
     private const int PollMilliseconds = 250;
 

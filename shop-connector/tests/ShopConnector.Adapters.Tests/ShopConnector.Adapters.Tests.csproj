@@ -23,6 +23,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Same import the adapters project takes: the browser-login seam moved
+         into the kit when a second service needed it, and the stubs here
+         implement those interfaces. -->
+    <Using Include="Connector.Kit.Browsing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
