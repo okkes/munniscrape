@@ -39,6 +39,9 @@ const state = {
   login: null,
   data: null,
   tab: 'providers',
+
+  /** Which providers the Providers screen lists. See matchesFilter. */
+  providerFilter: 'all',
 };
 
 /** Live sub-containers, so a poll can update progress without eating a half-typed answer. */
@@ -251,12 +254,79 @@ function renderProviders() {
     if (catalog?.error) parts.push(h('div', { class: 'panel' }, h('h3', {}, service.name), errorBlock(catalog.error)));
   }
 
-  const cards = allProviders().map(({ service, manifest }) => providerCard(service, manifest));
+  const all = allProviders();
+  const shown = all.filter(({ service, manifest }) => matchesFilter(service, manifest));
+
+  parts.push(providerFilters(all));
+
+  const cards = shown.map(({ service, manifest }) => providerCard(service, manifest));
   parts.push(cards.length > 0
     ? h('div', { class: 'grid' }, cards)
-    : empty('No providers. Is a connector running?'));
+    : empty(all.length === 0
+      ? 'No providers. Is a connector running?'
+      : 'Nothing under this filter.'));
 
   mount(body, parts);
+}
+
+/**
+ * Which providers the list is showing.
+ *
+ * `mock` is its own filter rather than a service, because it cuts ACROSS the
+ * services - every connector registers a mock set - and because it is the one
+ * people want to hide: a list where two thirds of the cards are fixtures makes
+ * the real providers hard to find, and a list with no fixtures at all makes
+ * the platform impossible to demonstrate.
+ */
+function matchesFilter(service, manifest) {
+  const isMock = manifest.id.startsWith('mock-');
+
+  switch (state.providerFilter) {
+    case 'all': return true;
+    case 'mock': return isMock;
+    // A service filter means the REAL providers of that service. Somebody
+    // asking for "Banking" is asking what they could connect, not how many
+    // fixtures ship with it.
+    default: return service.key === state.providerFilter && !isMock;
+  }
+}
+
+function providerFilters(all) {
+  const counts = new Map();
+  let mocks = 0;
+
+  for (const { service, manifest } of all) {
+    if (manifest.id.startsWith('mock-')) { mocks += 1; continue; }
+    counts.set(service.key, (counts.get(service.key) ?? 0) + 1);
+  }
+
+  // Built from what is actually there, never from a hardcoded list: a fourth
+  // service should appear here the day it is registered, without an edit.
+  const options = [{ key: 'all', label: 'All', count: all.length }];
+
+  for (const service of state.services) {
+    if (!counts.has(service.key)) continue;
+    options.push({ key: service.key, label: service.name ?? service.key, count: counts.get(service.key) });
+  }
+
+  if (mocks > 0) options.push({ key: 'mock', label: 'Fixtures', count: mocks });
+
+  return h('div', { class: 'filters', role: 'group', 'aria-label': 'Filter providers' },
+    options.map((option) => {
+      const active = state.providerFilter === option.key;
+
+      const button = h('button', {
+        type: 'button',
+        class: `chip-button ${active ? 'is-active' : ''}`.trim(),
+        'aria-pressed': String(active),
+        onclick: () => {
+          state.providerFilter = option.key;
+          renderProviders();
+        },
+      }, option.label, h('span', { class: 'chip-count' }, String(option.count)));
+
+      return button;
+    }));
 }
 
 function unreachableService(service) {

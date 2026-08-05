@@ -35,7 +35,12 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
 
     public HttpClient Http { get; } = new();
 
-    public IBrowserLease Browser => throw new NotSupportedException("no registry provider drives a browser yet");
+    /// <summary>
+    /// The lease, for the one thing the offline suite needs from it: the
+    /// cookie jar a completed sign-in leaves behind. Everything a browser
+    /// really does is exercised through the page seam instead.
+    /// </summary>
+    public IBrowserLease Browser { get; init; } = new StubBrowserLease();
 
     public string WorkDirectory { get; } = Path.GetTempPath();
 

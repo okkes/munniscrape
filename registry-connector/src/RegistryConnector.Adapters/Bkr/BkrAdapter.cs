@@ -3,6 +3,7 @@ using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
 using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
+using Connector.Kit.Normalization;
 using Connector.Kit.Security;
 using RegistryConnector.Adapters.Support;
 
@@ -196,7 +197,7 @@ public sealed class BkrAdapter : IProviderAdapter
                 $"{ProviderId}: the sign-in did not reach the portal after the code was submitted");
         }
 
-        return Signed(ctx);
+        return await SignedAsync(ctx, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -239,7 +240,7 @@ public sealed class BkrAdapter : IProviderAdapter
                 if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null)
                 {
                     ctx.Progress(JobStep.Finalizing);
-                    return Signed(ctx);
+                    return await SignedAsync(ctx, ct).ConfigureAwait(false);
                 }
 
                 if (asked.IsCompleted) break;
@@ -296,7 +297,7 @@ public sealed class BkrAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.Parsing);
 
-        var credits = BkrCreditParser.Parse(html, _options, ctx.SessionId);
+        var credits = Credits(page.Url, html, ctx.SessionId);
 
         ctx.Progress(JobStep.Normalizing);
 
@@ -311,12 +312,55 @@ public sealed class BkrAdapter : IProviderAdapter
         };
     }
 
-    private LoginResult Signed(IJobContext ctx) => new()
+    /// <summary>
+    /// The cookie jar IS the session, so it has to travel.
+    ///
+    /// B2C hands the portal an id_token by form_post and the portal answers
+    /// with its own cookie; the browser is never given a token we could store
+    /// instead. A login that returned only a device id looked like it had
+    /// succeeded - it says "Connected" and the bundle is real - and then every
+    /// fetch opened a fresh browser with no cookies, landed on the sign-in
+    /// page, and reported the portal as rebuilt.
+    /// </summary>
+    /// <summary>
+    /// What the page we landed on actually means.
+    ///
+    /// Behind a seam rather than inline in the fetch, because the decision is
+    /// the part worth testing and the browser plumbing around it is not: a
+    /// dead session and a rebuilt portal BOTH arrive as "no print block", they
+    /// call for opposite responses, and only the URL tells them apart.
+    /// </summary>
+    internal IReadOnlyList<CreditRegistration> Credits(string? url, string? html, string sessionId)
     {
-        Material = new SessionMaterial { DeviceId = ctx.Material?.DeviceId ?? Guid.NewGuid().ToString() },
-        Account = new ProviderAccount { DisplayName = Manifest.Name },
-        ExpiresAt = _time.GetUtcNow().AddSeconds(BkrManifest.SessionTtlSeconds),
-    };
+        // Checked before the parser, which cannot tell: the portal bounces a
+        // signed-out visitor to B2C, and reporting that as "the provider
+        // changed its site" sends the user to wait for an engineer when what
+        // they need is a sign-in button.
+        if (url is not null && url.Contains(_options.LoginHost, StringComparison.OrdinalIgnoreCase))
+        {
+            throw ConnectorException.SessionExpired(
+                $"{ProviderId}: the portal sent us back to the sign-in page, so the stored session is over. " +
+                "BKR issues no refresh token, so this needs a new sign-in.");
+        }
+
+        return BkrCreditParser.Parse(html, _options, sessionId);
+    }
+
+    private async Task<LoginResult> SignedAsync(IJobContext ctx, CancellationToken ct)
+    {
+        var storageState = await ctx.Browser.StorageStateAsync(ct).ConfigureAwait(false);
+
+        return new LoginResult
+        {
+            Material = new SessionMaterial
+            {
+                StorageState = storageState,
+                DeviceId = ctx.Material?.DeviceId ?? Guid.NewGuid().ToString(),
+            },
+            Account = new ProviderAccount { DisplayName = Manifest.Name },
+            ExpiresAt = _time.GetUtcNow().AddSeconds(BkrManifest.SessionTtlSeconds),
+        };
+    }
 
     /// <summary>
     /// The stored seed, if there is one. A seed that cannot be read is a

@@ -1430,3 +1430,43 @@ button:disabled {
   font-size: 0.75rem;
   white-space: pre;
 }
+
+/* ── provider filters ───────────────────────────────────────────────────
+   A row of toggles above the grid. Quiet until chosen: the list is the
+   content, and a filter bar that competes with it makes the screen harder
+   to read rather than easier. */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.chip-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid rgb(0 0 0 / 15%);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.chip-button:hover { background: rgb(0 0 0 / 4%); }
+
+.chip-button.is-active {
+  border-color: currentColor;
+  background: rgb(59 91 219 / 10%);
+  font-weight: 600;
+}
+
+/* The count earns its place: "Fixtures 8" tells you what hiding them buys
+   before you click. */
+.chip-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+  font-size: 0.8em;
+}

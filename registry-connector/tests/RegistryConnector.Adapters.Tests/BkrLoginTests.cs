@@ -184,6 +184,50 @@ public sealed class BkrLoginTests
         Assert.False(page.HoldsSecret);
     }
 
+    /// <summary>
+    /// The bug that made a working login useless.
+    ///
+    /// BKR's session is a cookie - B2C hands the portal an id_token by
+    /// form_post and the browser is never given a token to store instead - so
+    /// a LoginResult carrying only a device id says "Connected", mints a real
+    /// bundle, and leaves every fetch to open a fresh browser with no cookies,
+    /// land on the sign-in page, and report the portal as rebuilt.
+    /// </summary>
+    [Fact]
+    public async Task The_cookie_jar_leaves_with_the_login_because_it_is_the_session()
+    {
+        var page = Wizard();
+        using var ctx = new FakeJobContext { Inputs = Credentials(seed: Seed) };
+
+        var result = await Adapter().LoginAsync(
+            ctx, page, new StubSignedIn("https://portaal.mijnkredietregistratie.nl/", 0), CancellationToken.None);
+
+        Assert.Equal(StubBrowserLease.Jar, result.Material.StorageState);
+    }
+
+    /// <summary>
+    /// And the streamed path carries it too - somebody who signed in on the
+    /// page in front of them has exactly the same session as somebody whose
+    /// password was typed for them.
+    /// </summary>
+    [Fact]
+    public async Task A_streamed_sign_in_carries_the_same_jar()
+    {
+        var page = Wizard();
+        using var ctx = new FakeJobContext
+        {
+            Inputs = new Dictionary<string, string>(StringComparer.Ordinal),
+            AnswersNothing = true,
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
+        var result = await Adapter().LoginAsync(
+            ctx, page, new StubSignedIn("https://portaal.mijnkredietregistratie.nl/", 1), cts.Token);
+
+        Assert.Equal(StubBrowserLease.Jar, result.Material.StorageState);
+    }
+
     private static Dictionary<string, string> Credentials(
         string? username = Email, string? password = Password, string? seed = null)
     {

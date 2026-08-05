@@ -179,6 +179,48 @@ public sealed class BkrParsingTests
         Assert.Equal("T. Testpersoon", BkrCreditParser.ProfileOf(Overview(), Options));
     }
 
+    /// <summary>
+    /// A dead session and a rebuilt portal arrive identically - the portal
+    /// bounces a signed-out visitor to B2C, and the page that comes back has
+    /// no print block either way. Only the URL separates them, and they call
+    /// for opposite responses: one is a sign-in the user can do something
+    /// about, the other is an engineer's problem.
+    ///
+    /// BKR issues no refresh token, so a fetch on a dead session is normal
+    /// rather than exceptional - it happens an hour after every connect.
+    /// </summary>
+    [Fact]
+    public void Landing_back_on_the_sign_in_page_is_an_expired_session()
+    {
+        var adapter = new BkrAdapter(Options);
+
+        var expired = Assert.Throws<ConnectorException>(() => adapter.Credits(
+            "https://login.mijnkredietregistratie.nl/bkrconsp.onmicrosoft.com/oauth2/v2.0/authorize?...",
+            "<html><body>Inloggen</body></html>",
+            "ses_test"));
+
+        Assert.Equal(ErrorCode.SessionExpired, expired.Code);
+        Assert.NotEqual(ErrorCode.ProviderChanged, expired.Code);
+
+        // And a page on the PORTAL with no print block is the other thing
+        // entirely, which is what makes the URL check load-bearing.
+        var changed = Assert.Throws<ConnectorException>(() => adapter.Credits(
+            "https://portaal.mijnkredietregistratie.nl/",
+            "<html><body>something else</body></html>",
+            "ses_test"));
+
+        Assert.Equal(ErrorCode.ProviderChanged, changed.Code);
+    }
+
+    [Fact]
+    public void A_signed_in_page_is_parsed_through_the_same_seam()
+    {
+        var credits = new BkrAdapter(Options).Credits(
+            "https://portaal.mijnkredietregistratie.nl/", Overview(), "ses_test");
+
+        Assert.Equal(4, credits.Count);
+    }
+
     // ---- what it refuses to guess -------------------------------------------
 
     /// <summary>
