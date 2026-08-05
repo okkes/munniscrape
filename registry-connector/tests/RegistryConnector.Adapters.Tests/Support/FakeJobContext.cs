@@ -47,6 +47,14 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
     /// <summary>What the human types back. Null answers nothing.</summary>
     public Func<Challenge, string?>? Answer { get; init; }
 
+    /// <summary>
+    /// Never answers, which is what a streamed sign-in really looks like: the
+    /// person who signs in on the page in front of them has no reason to come
+    /// back to the consumer's UI, so what ends the challenge is the session
+    /// appearing rather than an answer arriving.
+    /// </summary>
+    public bool AnswersNothing { get; init; }
+
     public IReadOnlyList<JobStep> Steps { get; } = [];
 
     public bool CredentialWasSubmitted { get; private set; }
@@ -62,6 +70,8 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
         ArgumentNullException.ThrowIfNull(challenge);
 
         _asked.Add(challenge);
+
+        if (AnswersNothing) return new TaskCompletionSource<ChallengeAnswer>().Task.WaitAsync(ct);
 
         return Task.FromResult(new ChallengeAnswer
         {

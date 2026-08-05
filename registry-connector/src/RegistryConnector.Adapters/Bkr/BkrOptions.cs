@@ -30,7 +30,10 @@ public sealed record BkrOptions
     // ---- the sign-in page ---------------------------------------------------
 
     /// <summary>
-    /// CONFIRMED. B2C's stock ids, present in the capture.
+    /// CONFIRMED. B2C names it <c>signInName</c> and BKR labels it
+    /// "E-mailadres". It appears on BOTH the first screen and the password
+    /// screen - the second shows it back with the value already in it - so
+    /// finding it is never proof of which screen we are on.
     /// </summary>
     public IReadOnlyList<string> UsernameSelectors { get; init; } =
         ["#signInName", "#email", "input[name='signInName']", "input[type='email']"];
@@ -38,6 +41,11 @@ public sealed record BkrOptions
     public IReadOnlyList<string> PasswordSelectors { get; init; } =
         ["#password", "input[name='password']", "input[type='password']"];
 
+    /// <summary>
+    /// CONFIRMED, and the same button on both screens: <c>#next</c> is
+    /// "Start inzage" on the first and "Inloggen" on the second. The label
+    /// changes and the id does not, which is why this matches on the id.
+    /// </summary>
     public IReadOnlyList<string> SubmitSelectors { get; init; } =
         ["#next", "button#next", "button[type='submit']"];
 
@@ -130,8 +138,16 @@ public sealed record BkrOptions
 
     public int SelectorTimeoutMs { get; init; } = 15_000;
 
-    /// <summary>Short: these probe a page that is already the right one.</summary>
-    public int ProbeMs { get; init; } = 800;
+    /// <summary>
+    /// How long to look for the password box on the FIRST screen before
+    /// deciding this is the two-screen wizard and clicking through.
+    ///
+    /// Short on purpose. BKR asks on separate screens, so on the live page
+    /// this probe always misses and every millisecond of it is latency on
+    /// every sign-in. Long enough to cover a slow render of a single-page
+    /// form, short enough that being wrong costs nothing.
+    /// </summary>
+    public int ProbeMs { get; init; } = 1_500;
 
     /// <summary>
     /// How long a streamed sign-in may stay open. Generous: somebody may be

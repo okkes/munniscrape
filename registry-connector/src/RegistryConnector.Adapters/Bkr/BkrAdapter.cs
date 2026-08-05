@@ -118,15 +118,43 @@ public sealed class BkrAdapter : IProviderAdapter
             throw Missing("the e-mail box", _options.UsernameSelectors);
         }
 
-        if (!await page.FillAsync(_options.PasswordSelectors, password, _options.SelectorTimeoutMs, ct)
-                .ConfigureAwait(false))
+        // BKR asks for the two credentials on two SCREENS: the e-mail, then
+        // "Start inzage", then the password on a page that shows the e-mail
+        // back read-only. CONFIRMED live - the password box does not exist
+        // until the first button is clicked, so filling both up front finds
+        // nothing and reports the page as changed.
+        //
+        // Probed rather than assumed. A single-page form would be handled by
+        // the first attempt, so this survives BKR moving in either direction
+        // and a layout change does not need a release. The probe is short
+        // because on the real page it always misses, and that wait is pure
+        // latency on every sign-in.
+        if (!await page.FillAsync(_options.PasswordSelectors, password, _options.ProbeMs, ct).ConfigureAwait(false))
         {
-            throw Missing("the password box", _options.PasswordSelectors);
+            // Advancing the wizard submits the e-mail, so the account is
+            // touched from here. Latched first: a lease lost between the click
+            // and the next line would requeue a sign-in that already reached
+            // BKR, and a retried sign-in is how an account gets locked.
+            ctx.CredentialSubmitted();
+
+            if (!await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct)
+                    .ConfigureAwait(false))
+            {
+                throw Missing("the 'Start inzage' button", _options.SubmitSelectors);
+            }
+
+            if (!await page.FillAsync(_options.PasswordSelectors, password, _options.SelectorTimeoutMs, ct)
+                    .ConfigureAwait(false))
+            {
+                // Both layouts have now been tried, so this is a real shape
+                // change rather than the wizard we were expecting.
+                throw Missing(
+                    "the password box, on either the first or the second screen", _options.PasswordSelectors);
+            }
         }
 
-        // From here the account has been touched. After this a lost lease
-        // fails the job rather than requeuing it: a retried sign-in is how an
-        // account gets locked, and BKR may already have sent a text.
+        // Idempotent, so the two-screen path above having latched already is
+        // fine.
         ctx.CredentialSubmitted();
 
         if (!await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct).ConfigureAwait(false))
