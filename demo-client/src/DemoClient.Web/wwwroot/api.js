@@ -14,6 +14,8 @@
  * turns the keys into English.
  */
 
+import * as report from './report.js';
+
 const BASE = '/api';
 
 export class RelayError extends Error {
@@ -72,6 +74,7 @@ export function liveSequence(raw) {
 }
 
 async function request(method, path, body) {
+  const startedAt = Date.now();
   let response;
   try {
     response = await fetch(BASE + path, {
@@ -80,13 +83,18 @@ async function request(method, path, body) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (cause) {
+    report.noteCall({ method, path, status: 0, ms: Date.now() - startedAt, code: 'unreachable' });
+
     // The relay itself is unreachable. Not a connector error, but the user
     // deserves the same shaped message rather than a stack trace.
     throw new RelayError(0, { code: 'provider_unavailable', retriable: true, user_action: 'retry',
       message_key: 'connect.error.provider_unavailable' }, String(cause));
   }
 
-  if (response.status === 204) return null;
+  if (response.status === 204) {
+    report.noteCall({ method, path, status: 204, ms: Date.now() - startedAt });
+    return null;
+  }
 
   const text = await response.text();
   let payload = null;
@@ -97,6 +105,14 @@ async function request(method, path, body) {
       payload = null;
     }
   }
+
+  report.noteCall({
+    method,
+    path,
+    status: response.status,
+    ms: Date.now() - startedAt,
+    code: response.ok ? null : payload?.error?.code ?? null,
+  });
 
   if (!response.ok) {
     // A well-behaved relay always passes the envelope through. Anything else

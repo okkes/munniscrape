@@ -1402,3 +1402,31 @@ button:disabled {
     animation: none;
   }
 }
+
+/* ── the report button ──────────────────────────────────────────────────
+   Inside every alert, because the moment somebody can act on a failure is
+   the moment they are looking at it. Quiet by default: it is a tool, not a
+   call to action, and an error panel that shouts twice reads as panic. */
+.alert-report {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgb(0 0 0 / 8%);
+}
+
+.alert-report .small {
+  font-size: 0.8rem;
+}
+
+/* The fallback for an insecure origin, where the clipboard API is refused.
+   Monospace and full width because the point is to select all of it. */
+.report-dump {
+  width: 100%;
+  margin-top: 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  white-space: pre;
+}

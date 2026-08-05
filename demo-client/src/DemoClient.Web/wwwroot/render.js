@@ -11,6 +11,7 @@
  */
 
 import * as copy from './copy.js';
+import * as report from './report.js';
 
 // ── DOM ───────────────────────────────────────────────────────────────────
 
@@ -233,7 +234,47 @@ export function errorBlock(error) {
       error.status ? h('code', {}, `HTTP ${error.status}`) : null,
       h('code', {}, error.retriable ? 'retriable' : 'not retriable'),
       error.detailId ? h('code', {}, error.detailId) : null,
-      error.detail ? h('code', { class: 'muted' }, error.detail) : null));
+      error.detail ? h('code', { class: 'muted' }, error.detail) : null),
+    reportRow(error));
+}
+
+/**
+ * "Copy the details" - on every error, because the moment somebody can act on
+ * a failure is the moment they are looking at it.
+ *
+ * What lands on the clipboard is assembled by report.js from an allowlist:
+ * ids, codes, the last few API calls and any console errors. No bundles, no
+ * tickets, no typed credentials, no provider payloads. The button says so,
+ * because a person about to paste something into a chat window deserves to
+ * know what is in it before they do rather than after.
+ */
+function reportRow(error) {
+  const status = h('span', { class: 'muted small' }, '');
+
+  const button = h('button', {
+    type: 'button',
+    class: 'ghost small',
+    onclick: async () => {
+      const text = report.build({ error });
+
+      status.textContent = await report.copy(text)
+        ? 'Copied - paste it wherever the problem is being looked at.'
+        : 'Could not reach the clipboard; the details are in the box below.';
+
+      if (status.textContent.startsWith('Could not')) {
+        const box = h('textarea', { class: 'report-dump', readonly: 'readonly', rows: '12' });
+        box.value = text;
+        status.after(box);
+        box.select();
+      }
+    },
+  }, 'Copy the details');
+
+  return h('div', { class: 'alert-report' },
+    button,
+    h('span', { class: 'muted small' },
+      'Ids, error codes and recent API calls. No credentials, no bundles, no receipts.'),
+    status);
 }
 
 // ── normalised records ────────────────────────────────────────────────────

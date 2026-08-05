@@ -23,6 +23,7 @@ import {
 } from './render.js';
 import { authForm, paramForm } from './manifest-form.js';
 import { renderChallenge } from './challenges.js';
+import * as report from './report.js';
 
 /** The typed progress vocabulary, in the order a run walks it. */
 const STEP_ORDER = [
@@ -54,6 +55,10 @@ const el = (id) => document.getElementById(id);
 // ── boot ──────────────────────────────────────────────────────────────────
 
 async function boot() {
+  // Hooked before anything else runs: a console error thrown during startup is
+  // exactly the one nobody can describe afterwards.
+  report.watchConsole();
+
   for (const button of document.querySelectorAll('[data-tab]')) {
     button.addEventListener('click', () => switchTab(button.dataset.tab));
   }
@@ -126,6 +131,7 @@ async function refreshCatalog(serviceKey) {
 
 function switchTab(name) {
   state.tab = name;
+  report.remember({ tab: name });
 
   for (const button of document.querySelectorAll('[data-tab]')) {
     button.classList.toggle('is-active', button.dataset.tab === name);
@@ -650,6 +656,15 @@ function isSettled(sessionState) {
 
 async function settle(view) {
   const run = state.login;
+
+  report.remember({
+    service: run?.service?.key ?? null,
+    provider: run?.manifest?.id ?? null,
+    manifestVersion: run?.manifest?.manifest_version ?? null,
+    sessionId: view?.session_id ?? null,
+    jobState: view?.state ?? null,
+    step: view?.step ?? null,
+  });
   if (!run || run.finished) return;
   run.finished = true;
   run.stop?.();
@@ -1158,6 +1173,14 @@ async function runFetch(row, resource, params, results) {
  */
 async function followJob(row, resource, accepted, results) {
   let view = accepted;
+
+  report.remember({
+    service: row?.service ?? null,
+    provider: row?.provider ?? null,
+    resource: resource?.id ?? null,
+    sessionId: row?.sessionId ?? null,
+    jobId: accepted?.job_id ?? null,
+  });
   // The box we are writing into. If the screen is rebuilt under us - another
   // connection picked, another resource, a disconnect - this poll is writing
   // into a detached node and should stop rather than run on invisibly.
@@ -1177,6 +1200,7 @@ async function followJob(row, resource, accepted, results) {
     await sleep(1200);
 
     view = await api.job(row.service, row.provider, accepted.job_id);
+    report.remember({ jobState: view?.state ?? null, step: view?.step ?? null });
     if (live.data.progress !== box) return;
     mount(box, jobPanel(view));
     paintJobChallenge(row, view);
