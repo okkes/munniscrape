@@ -1,0 +1,289 @@
+<!--
+    SYNTHETIC. The STRUCTURE of BKR's consumer portal, captured live on
+    2026-08-04, with a credit history nobody has.
+
+    What is verbatim and load-bearing:
+      * the hidden #pdf-export block, which carries one page per credit plus
+        one for the consumer - so a single request gets everything, and no
+        detail page has to be walked
+      * label/value pairs as <div class="label">..</div><div class="value">..</div>
+      * the Dutch labels, which are what the parser keys on
+      * "EUR 2.000" meaning two thousand: the dot is a THOUSANDS separator,
+        and reading it as a decimal point turns a two-thousand-euro debt into
+        two euros while looking perfectly reasonable
+      * the visible list rows appearing TWICE, once per tab, which is why the
+        parser reads the print block and not them
+      * "Geen bijzonderheden gemeld", the sentence that means no arrears - it
+        is the absence of a code, not a code
+
+    R10000004 is the case that matters most: its EXPECTED end passed years
+    ago and it has NO actual end date, so it is still running. A parser that
+    inferred "ended" from the expected date would report somebody's live debt
+    as settled - the single worst thing this connector could say.
+
+    The ended credit is INVENTED. The captured account had none, so nobody has
+    seen a real one; what is asserted about it is only that a filled
+    "Werkelijke einddatum" is what makes a credit ended, which is the rule the
+    portal's own field names state.
+-->
+<html><body>
+<div class="contentpage">
+  <ul class="nav nav-tabs" id="contracts-tab">
+    <li class="nav-item"><a class="nav-link active" id="all-tab" href="#all">Alles</a></li>
+    <li class="nav-item"><a class="nav-link" id="running-tab" href="#running">Lopend</a></li>
+    <li class="nav-item"><a class="nav-link" id="ended-tab" href="#ended">Be&euml;indigd</a></li>
+  </ul>
+  <div class="tab-content" id="contracts-tab-content">
+    <div class="tab-pane show active" id="all">
+      <ul class="list-group p-0">
+        <li class="list-group-item contract contract-running">
+          <a href="/Home/Details/11111111-1111-1111-1111-111111111111">
+            <div class="font18 col-12 pl-0">Testbank N.V.</div>
+            <div class="font14 col-12 pl-0 pt-1">Doorlopend krediet</div>
+            <div class="col-sm-6 col-md-2 font14 pt-3">&euro; 2.000</div>
+          </a>
+        </li>
+      </ul>
+    </div>
+    <div class="tab-pane" id="running">
+      <ul class="list-group p-0">
+        <li class="list-group-item contract contract-running">
+          <a href="/Home/Details/11111111-1111-1111-1111-111111111111?onlyCurrent=true">
+            <div class="font18 col-12 pl-0">Testbank N.V.</div>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div style="position: fixed; top: 0; left: 0; z-index: -1;">
+<div id="pdf-export">
+    <div class="pdf-page">
+        <h5 class="title">Uw kredietoverzicht</h5>
+        <div class="section">
+            <h5 class="section-title">Persoonsgegevens</h5>
+            <div class="section-description">Ontvangen van u</div>
+            <div class="info-grid">
+                <div class="info-item quarter">
+                    <div class="label">Voorletter(s)</div>
+                    <div class="value">T.</div>
+                </div>
+                <div class="info-item half">
+                    <div class="label">Achternaam</div>
+                    <div class="value">Testpersoon</div>
+                </div>
+                <div class="info-item half">
+                    <div class="label">Voornamen</div>
+                    <div class="value">Tessa</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Geslacht</div>
+                    <div class="value">V</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Geboortedatum</div>
+                    <div class="value">01-01-1990</div>
+                </div>
+                <div class="info-item half">
+                    <div class="label">Huidig adres</div>
+                    <div class="value">Teststraat 1<br>1000AA TESTDORP<br>NL</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="pdf-page">
+        <div class="section">
+            <h5 class="section-title">Kredietgegevens</h5>
+            <div class="info-grid">
+                <div class="info-item half">
+                    <div class="label">Kredietsoort</div>
+                    <div class="value">Doorlopend krediet</div>
+                </div>
+                <div class="info-item half">
+                    <div class="label">Aanbieder</div>
+                    <div class="value">Testbank N.V.</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Bedrag</div>
+                    <div class="value">&euro; 2.000</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Overeenkomstnummer</div>
+                    <div class="value">R10000001</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Registratiedatum</div>
+                    <div class="value">23-10-2025</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Datum eerste aflossing</div>
+                    <div class="value">24-11-2025</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Verwachte einddatum</div>
+                    <div class="value"></div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Werkelijke einddatum</div>
+                    <div class="value"></div>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h5 class="section-title">Bijzonderheden</h5>
+            <div class="info-grid">
+                <div class="info-item half">
+                    <div class="label">Bijzonderheden</div>
+                    <div class="value">Geen bijzonderheden gemeld</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="pdf-page">
+        <div class="section">
+            <h5 class="section-title">Kredietgegevens</h5>
+            <div class="info-grid">
+                <div class="info-item half">
+                    <div class="label">Kredietsoort</div>
+                    <div class="value">Aflopend krediet</div>
+                </div>
+                <div class="info-item half">
+                    <div class="label">Aanbieder</div>
+                    <div class="value">Testwinkel B.V.</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Bedrag</div>
+                    <div class="value">&euro; 996</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Overeenkomstnummer</div>
+                    <div class="value">R10000002</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Registratiedatum</div>
+                    <div class="value">15-01-2026</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Datum eerste aflossing</div>
+                    <div class="value">15-02-2026</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Verwachte einddatum</div>
+                    <div class="value">15-01-2028</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Werkelijke einddatum</div>
+                    <div class="value"></div>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h5 class="section-title">Bijzonderheden</h5>
+            <div class="info-grid">
+                <div class="info-item half">
+                    <div class="label">Bijzonderheden</div>
+                    <div class="value">Geen bijzonderheden gemeld</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="pdf-page">
+        <div class="section">
+            <h5 class="section-title">Kredietgegevens</h5>
+            <div class="info-grid">
+                <div class="info-item half">
+                    <div class="label">Kredietsoort</div>
+                    <div class="value">Aflopend krediet</div>
+                </div>
+                <div class="info-item half">
+                    <div class="label">Aanbieder</div>
+                    <div class="value">Oud Krediet B.V.</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Bedrag</div>
+                    <div class="value">&euro; 5.304</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Overeenkomstnummer</div>
+                    <div class="value">R10000003</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Registratiedatum</div>
+                    <div class="value">01-03-2023</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Datum eerste aflossing</div>
+                    <div class="value">01-04-2023</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Verwachte einddatum</div>
+                    <div class="value">01-09-2025</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Werkelijke einddatum</div>
+                    <div class="value">12-08-2025</div>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h5 class="section-title">Bijzonderheden</h5>
+            <div class="info-grid">
+                <div class="info-item half">
+                    <div class="label">Bijzonderheden</div>
+                    <div class="value">A2</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="pdf-page">
+        <div class="section">
+            <h5 class="section-title">Kredietgegevens</h5>
+            <div class="info-grid">
+                <div class="info-item half">
+                    <div class="label">Kredietsoort</div>
+                    <div class="value">Aflopend krediet</div>
+                </div>
+                <div class="info-item half">
+                    <div class="label">Aanbieder</div>
+                    <div class="value">Trage Aflossing B.V.</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Bedrag</div>
+                    <div class="value">&euro; 1.250</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Overeenkomstnummer</div>
+                    <div class="value">R10000004</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Registratiedatum</div>
+                    <div class="value">01-02-2020</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Datum eerste aflossing</div>
+                    <div class="value">01-03-2020</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Verwachte einddatum</div>
+                    <div class="value">01-03-2022</div>
+                </div>
+                <div class="info-item quarter">
+                    <div class="label">Werkelijke einddatum</div>
+                    <div class="value"></div>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h5 class="section-title">Bijzonderheden</h5>
+            <div class="info-grid">
+                <div class="info-item half">
+                    <div class="label">Bijzonderheden</div>
+                    <div class="value">Geen bijzonderheden gemeld</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+</body></html>

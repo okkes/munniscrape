@@ -174,8 +174,8 @@ services:
   # credit register says somebody owes is not something a shopping breach
   # should reach.
   #
-  # No agent yet. Every provider here is inline HTTP; the day one needs a
-  # browser, it gets a registry-agent beside the other two.
+  # BKR drives a browser for its sign-in, so registry-agent below serves
+  # this control plane exactly as the shop and bank agents serve theirs.
   registry-api:
     build:
       context: ..
@@ -241,6 +241,31 @@ services:
     volumes:
       - shop_profiles_local:/profiles
       - shop_state_local:/state
+    networks: [mesh]
+
+  # BKR signs in through a browser, so the registry service needs an agent
+  # like the other two. On `mesh` only: it holds a plaintext password and a
+  # TOTP seed for the length of a job, and an agent that cannot resolve
+  # postgres cannot be talked into reading one.
+  registry-agent:
+    <<: *agent-common
+    build:
+      context: ..
+      dockerfile: shop-connector/src/ShopConnector.Agent/Dockerfile
+    environment:
+      <<: *agent-env
+      ConnectorAgent__AgentName: local-registry
+      ConnectorAgent__ControlPlaneBaseUrl: http://registry-api:8080
+      ConnectorAgent__MaxConcurrency: ${REGISTRY_AGENT_CONCURRENCY:-1}
+      ConnectorAgent__Runtimes__0: http
+      ConnectorAgent__Runtimes__1: browser_once
+      ConnectorAgent__Runtimes__2: browser_interactive
+    depends_on:
+      registry-api:
+        condition: service_healthy
+    volumes:
+      - registry_profiles_local:/profiles
+      - registry_state_local:/state
     networks: [mesh]
 
   bank-agent:
@@ -336,6 +361,8 @@ volumes:
   # a logged-in profile is the credential, and it should be as awkward to
   # copy off the machine as a credential ought to be.
   bank_profiles_local:
+  registry_profiles_local:
+  registry_state_local:
   shop_profiles_local:
   # The enrollment state. Separate from the profiles so that clearing a
   # stuck browser profile does not also make the agent a stranger.

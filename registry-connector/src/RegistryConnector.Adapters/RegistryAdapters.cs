@@ -1,4 +1,5 @@
 using Connector.Kit.Adapters;
+using RegistryConnector.Adapters.Bkr;
 using RegistryConnector.Adapters.Mock;
 
 namespace RegistryConnector.Adapters;
@@ -28,28 +29,18 @@ public static class RegistryAdapters
         [.. Real(options, time), .. MockRegistryAdapters.All(time)];
 
     /// <summary>
-    /// Empty, for now, and deliberately so.
+    /// BKR, the Dutch credit register.
     ///
-    /// BKR is the reason this service exists and it is not here yet, because
-    /// nobody on this project has seen the inside of
-    /// portaal.mijnkredietregistratie.nl - only a screenshot of the credit
-    /// list. The last provider built from a plausible guess about markup was
-    /// bol, and every guess in it was wrong in a way that cost a live account
-    /// attempt to discover.
-    ///
-    /// So the order is: capture the portal, then write the adapter against
-    /// what it actually says. The mocks below already exercise the shape BKR
-    /// will have - a stored password plus a fresh authenticator code on every
-    /// sync - so the service, the challenge relay and the consuming app are
-    /// all provably working before the first real byte arrives.
+    /// Built against a live capture of the portal rather than a guess about
+    /// its markup - which is why it took a sign-in to write and not an
+    /// afternoon of plausible selectors.
     /// </summary>
     public static IReadOnlyList<IProviderAdapter> Real(
         RegistryAdapterOptions? options = null, TimeProvider? time = null)
     {
-        _ = options;
-        _ = time;
+        var settings = options ?? new RegistryAdapterOptions();
 
-        return [];
+        return [new BkrAdapter(settings.Bkr, time)];
     }
 }
 
@@ -60,4 +51,5 @@ public static class RegistryAdapters
 /// </summary>
 public sealed class RegistryAdapterOptions
 {
+    public BkrOptions? Bkr { get; set; }
 }

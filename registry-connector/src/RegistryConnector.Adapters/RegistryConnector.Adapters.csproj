@@ -27,6 +27,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Embedded so a parse test needs no file paths and cannot drift from the
+         assembly it tests, and copied so an operator diffing a live capture
+         against the recorded shape can just open the file. -->
+    <None Remove="Fixtures\**\*.html" />
+    <EmbeddedResource Include="Fixtures\**\*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!--
       Embedded so a parse test needs no file paths and cannot drift from the
       assembly it tests, and copied so an operator diffing a live capture
